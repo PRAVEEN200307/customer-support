@@ -45,19 +45,25 @@ const AdminChat = () => {
     refetchInterval: 3000,
   });
 
+  // Correctly extract rooms from the response
+  const rooms = roomsData?.data?.rooms || [];
+  const selectedRoomData = rooms.find(r => r.id === selectedRoom);
+  const messages = messagesData?.data?.messages || [];
+
   // Auto-select room from URL or first active room
   useEffect(() => {
-    if (roomsData?.data) {
-      const rooms = roomsData.data;
+    if (rooms.length > 0) {
       if (roomId) {
         const room = rooms.find(r => r.id === roomId);
-        if (room) setSelectedRoom(room.id);
-      } else if (rooms.length > 0 && !selectedRoom) {
+        if (room) {
+          setSelectedRoom(room.id);
+        }
+      } else if (!selectedRoom) {
         const activeRoom = rooms.find(r => r.isActive) || rooms[0];
         setSelectedRoom(activeRoom.id);
       }
     }
-  }, [roomsData, roomId, selectedRoom]);
+  }, [rooms, roomId, selectedRoom]);
 
   // Join socket room when room is selected
   useEffect(() => {
@@ -71,7 +77,6 @@ const AdminChat = () => {
     mutationFn: async () => {
       if (!socket || !selectedRoom || !message.trim()) return;
       
-      const rooms = roomsData?.data || [];
       const room = rooms.find(r => r.id === selectedRoom);
       if (!room) return;
       
@@ -92,6 +97,7 @@ const AdminChat = () => {
     },
     onError: (error) => {
       toast.error('Failed to send message');
+      console.error('Send message error:', error);
     },
   });
 
@@ -130,23 +136,46 @@ const AdminChat = () => {
       }
     };
 
+    const handleRoomClosed = (data) => {
+      if (data.roomId === selectedRoom) {
+        queryClient.invalidateQueries(['admin-rooms']);
+        toast.info('Chat room has been closed');
+      }
+    };
+
     socket.on('receive_message', handleReceiveMessage);
     socket.on('messages_read', handleMessagesRead);
+    socket.on('room_closed', handleRoomClosed);
 
     return () => {
       socket.off('receive_message', handleReceiveMessage);
       socket.off('messages_read', handleMessagesRead);
+      socket.off('room_closed', handleRoomClosed);
     };
   }, [socket, selectedRoom, queryClient]);
 
-  // Scroll to bottom
+  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesData]);
+  }, [messages]);
+
+  // Get unread messages for the selected room
+  const unreadMessages = messages.filter(
+    msg => !msg.isRead && msg.senderId !== user?.id
+  );
+
+  // Mark unread messages as read when opening a chat
+  useEffect(() => {
+    if (unreadMessages.length > 0 && socket && selectedRoom) {
+      const messageIds = unreadMessages.map(msg => msg.id);
+      markAsReadMutation.mutate(messageIds);
+      socket.emit('mark_as_read', { messageIds, roomId: selectedRoom });
+    }
+  }, [unreadMessages.length, selectedRoom, socket]);
 
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (message.trim() && !sendMessageMutation.isLoading) {
+    if (message.trim() && !sendMessageMutation.isLoading && selectedRoomData?.isActive) {
       sendMessageMutation.mutate();
     }
   };
@@ -157,44 +186,34 @@ const AdminChat = () => {
     }
   };
 
-  const rooms = roomsData?.data || [];
-  const selectedRoomData = rooms.find(r => r.id === selectedRoom);
-  const messages = messagesData?.data || [];
-
   // Filter rooms based on search term
   const filteredRooms = searchTerm
     ? rooms.filter(room =>
-        room.customer?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        room.roomName?.toLowerCase().includes(searchTerm.toLowerCase())
+        (room.customer?.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+        (room.roomName?.toLowerCase() || '').includes(searchTerm.toLowerCase())
       )
     : rooms;
 
-  // Get unread messages for the selected room
-  const unreadMessages = messages.filter(
-    msg => !msg.isRead && msg.senderId !== user?.id
-  );
-
-  // Mark unread messages as read
-  useEffect(() => {
-    if (unreadMessages.length > 0 && socket && selectedRoom) {
-      const messageIds = unreadMessages.map(msg => msg.id);
-      markAsReadMutation.mutate(messageIds);
-      socket.emit('mark_as_read', { messageIds, roomId: selectedRoom });
-    }
-  }, [unreadMessages.length, selectedRoom]);
-
-  // Format time
+  // Format time helper function
   const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now - date) / (1000 * 60 * 60);
-    
-    if (diffInHours < 24) {
-      return format(date, 'HH:mm');
-    } else if (diffInHours < 48) {
-      return 'Yesterday';
-    } else {
-      return format(date, 'MMM dd');
+    try {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      
+      const now = new Date();
+      const diffInHours = (now - date) / (1000 * 60 * 60);
+      
+      if (diffInHours < 24) {
+        return format(date, 'HH:mm');
+      } else if (diffInHours < 48) {
+        return 'Yesterday';
+      } else {
+        return format(date, 'MMM dd');
+      }
+    } catch (error) {
+      console.error('Error formatting time:', error);
+      return '';
     }
   };
 
@@ -251,7 +270,7 @@ const AdminChat = () => {
                       <span className={`font-semibold ${
                         room.isActive ? 'text-green-600' : 'text-gray-600'
                       }`}>
-                        {room.customer?.email?.charAt(0).toUpperCase()}
+                        {room.customer?.email?.charAt(0)?.toUpperCase() || 'U'}
                       </span>
                     </div>
                     <div className="ml-3 min-w-0 flex-1">
@@ -307,7 +326,7 @@ const AdminChat = () => {
                     <span className={`text-lg font-semibold ${
                       selectedRoomData?.isActive ? 'text-green-600' : 'text-gray-600'
                     }`}>
-                      {selectedRoomData?.customer?.email?.charAt(0).toUpperCase()}
+                      {selectedRoomData?.customer?.email?.charAt(0)?.toUpperCase() || 'U'}
                     </span>
                   </div>
                   <div className="min-w-0">
@@ -323,25 +342,24 @@ const AdminChat = () => {
                       </span>
                       <span>•</span>
                       <span className="truncate max-w-[120px]">
-                        Room: {selectedRoomData?.roomName?.slice(-8)}
+                        Room: {selectedRoomData?.roomName?.slice(-8) || selectedRoomData?.id?.slice(-8)}
                       </span>
                       <span>•</span>
                       <span>
-                        Created: {format(new Date(selectedRoomData?.created_at), 'MMM dd')}
+                        Created: {selectedRoomData?.created_at ? format(new Date(selectedRoomData.created_at), 'MMM dd') : 'N/A'}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  {!selectedRoomData?.isActive && (
+                  {!selectedRoomData?.isActive ? (
                     <button
                       onClick={() => toast.info('This chat room is already closed')}
                       className="px-3 py-1.5 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                     >
                       Room Closed
                     </button>
-                  )}
-                  {selectedRoomData?.isActive && (
+                  ) : (
                     <button
                       onClick={handleCloseRoom}
                       disabled={closeRoomMutation.isLoading}
@@ -400,7 +418,9 @@ const AdminChat = () => {
                           <div className={`text-xs mt-2 flex items-center space-x-2 ${
                             isSender ? 'text-blue-200 justify-end' : 'text-gray-500 justify-between'
                           }`}>
-                            <span>{format(new Date(msg.createdAt), 'HH:mm')}</span>
+                            <span>
+                              {msg.createdAt ? format(new Date(msg.createdAt), 'HH:mm') : ''}
+                            </span>
                             {isSender && (
                               <div className="flex items-center space-x-1">
                                 {isRead ? (

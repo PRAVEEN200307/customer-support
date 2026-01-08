@@ -37,16 +37,39 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting for all routes
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    message: 'Too many requests from this IP. Please try again later.'
-  }
-});
-app.use(globalLimiter);
+
+
+// // Chat-specific rate limiter (more generous)
+// const chatLimiter = rateLimit({
+//   windowMs: 60 * 1000, // 1 minute
+//   max: 300, // 300 requests per minute
+//   message: {
+//     success: false,
+//     message: 'Chat rate limit exceeded. Please wait a moment.',
+//     retryAfter: 30
+//   },
+//   skip: (req) => {
+//     // Skip rate limiting for WebSocket-related requests
+//     return req.path.includes('/socket.io/') || req.headers.upgrade === 'websocket';
+//   }
+// });
+
+// const authLimiter = rateLimit({
+//   store: new RedisStore({
+//     client: redisClient,
+//     prefix: 'ratelimit:auth:',
+//     expiry: 3600, // 1 hour TTL
+//   }),
+//   windowMs: 60 * 60 * 1000, // 1 hour
+//   max: 10, // Only 10 failed attempts per hour
+//   message: {
+//     success: false,
+//     message: 'Too many failed login attempts. Account temporarily locked.',
+//     retryAfter: 3600
+//   }
+// });
+
+// app.use(globalLimiter);
 
 // Body parsing middleware
 app.use(express.json());

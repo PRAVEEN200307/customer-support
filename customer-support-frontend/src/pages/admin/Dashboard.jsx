@@ -21,6 +21,8 @@ const AdminDashboard = () => {
     refetchInterval: 30000,
   });
 
+  console.log('Rooms Data:', roomsData?.data?.rooms);
+
   const activeRooms = roomsData?.data?.filter(room => room.isActive) || [];
   const pendingRooms = roomsData?.data?.filter(room => !room.isActive) || [];
   const totalMessages = roomsData?.data?.reduce((acc, room) => acc + (room.messageCount || 0), 0) || 0;
