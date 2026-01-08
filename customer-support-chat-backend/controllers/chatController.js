@@ -43,7 +43,7 @@ class ChatController {
       
       // If user cleared chat, only show messages after deletion
       if (deletedChat) {
-        whereCondition.createdAt = { [Op.gt]: deletedChat.deletedAt };
+        whereCondition.created_at = { [Op.gt]: deletedChat.createdAt };
       }
 
       const messages = await Message.findAll({
@@ -60,7 +60,7 @@ class ChatController {
             attributes: ['id', 'email'] 
           }
         ],
-        order: [['createdAt', 'ASC']],
+        order: [['created_at', 'ASC']],
         limit,
         offset
       });
@@ -145,10 +145,10 @@ class ChatController {
           { 
             model: require('../models/User'), 
             as: 'customer', 
-            attributes: ['id', 'email', 'createdAt'] 
+            attributes: ['id', 'email', 'created_at'] 
           }
         ],
-        order: [['lastMessageAt', 'DESC']]
+        // order: [['last_message_at', 'DESC']]
       });
 
       return rooms;

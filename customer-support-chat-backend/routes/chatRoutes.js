@@ -7,7 +7,7 @@ const { verifyToken } = require('../middleware/auth');
 // Get user's chat room
 router.get('/my-room', verifyToken, async (req, res) => {
   try {
-    const room = await ChatController.getOrCreateRoom(req.userId);
+    const room = await ChatController.getOrCreateRoom(req.user.id);
     
     res.json({
       success: true,
@@ -38,10 +38,10 @@ router.get('/history/:roomId', verifyToken, async (req, res) => {
     }
 
     // Check if user is participant
-    const user = await User.findByPk(req.userId);
-    const isAdmin = user.email === 'admin@example.com'; // Adjust based on your admin email
+    const user = await User.findByPk(req.user.id);
+    const isAdmin = req.user.userType === 'admin';
     
-    if (!isAdmin && room.customerId !== req.userId) {
+    if (!isAdmin && room.customerId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Access denied to this chat room'
@@ -50,7 +50,7 @@ router.get('/history/:roomId', verifyToken, async (req, res) => {
 
     const messages = await ChatController.getChatHistory(
       roomId, 
-      req.userId, 
+      req.user.id, 
       parseInt(limit), 
       parseInt(offset)
     );
@@ -80,7 +80,7 @@ router.post('/messages/read', verifyToken, async (req, res) => {
       });
     }
 
-    await ChatController.markAsRead(messageIds, req.userId);
+    await ChatController.markAsRead(messageIds, req.user.id);
 
     res.json({
       success: true,
@@ -100,7 +100,7 @@ router.post('/clear/:roomId', verifyToken, async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    await ChatController.clearChat(req.userId, roomId);
+    await ChatController.clearChat(req.user.id, roomId);
 
     res.json({
       success: true,
@@ -118,7 +118,7 @@ router.post('/clear/:roomId', verifyToken, async (req, res) => {
 // Get unread count
 router.get('/unread-count', verifyToken, async (req, res) => {
   try {
-    const count = await ChatController.getUnreadCount(req.userId);
+    const count = await ChatController.getUnreadCount(req.user.id);
 
     res.json({
       success: true,
@@ -136,18 +136,18 @@ router.get('/unread-count', verifyToken, async (req, res) => {
 // Admin only: Get all chat rooms
 router.get('/admin/rooms', verifyToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.userId);
+    const user = await User.findByPk(req.user.id);
     
     // Check if user is admin (adjust this based on your admin identification)
-    if (user.email !== 'admin@example.com') {
+    if (req.user.userType !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Admin only.'
       });
     }
 
-    const rooms = await ChatController.getAllRooms(req.userId);
-
+    const rooms = await ChatController.getAllRooms(req.user.id);
+    console.log("All Rooms:", rooms);
     res.json({
       success: true,
       rooms

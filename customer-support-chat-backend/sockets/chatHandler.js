@@ -47,6 +47,7 @@ class ChatHandler {
 
   async handleCustomerConnection(socket, userId) {
     try {
+
       // Get or create room for customer
       const room = await ChatController.getOrCreateRoom(userId);
       this.userRooms.set(userId, room.id);

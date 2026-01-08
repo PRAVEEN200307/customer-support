@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+}
+
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased text-gray-800;
+  }
+}
+
+@layer components {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #94a3b8;
+  }
+
+  .typing-indicator {
+    @apply flex space-x-1;
+  }
+
+  .typing-indicator div {
+    @apply w-2 h-2 bg-blue-500 rounded-full animate-bounce;
+  }
+
+  .typing-indicator div:nth-child(2) {
+    animation-delay: 0.1s;
+  }
+
+  .typing-indicator div:nth-child(3) {
+    animation-delay: 0.2s;
+  }
+
+  .message-bubble {
+    @apply relative;
+  }
+
+  .message-bubble:after {
+    content: '';
+    @apply absolute w-3 h-3;
+  }
+
+  .message-bubble.self:after {
+    @apply -right-1.5 bottom-0 bg-blue-600;
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  .message-bubble.other:after {
+    @apply -left-1.5 bottom-0 bg-white;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+}
