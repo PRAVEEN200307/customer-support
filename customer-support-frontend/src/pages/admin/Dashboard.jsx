@@ -23,9 +23,9 @@ const AdminDashboard = () => {
 
   console.log('Rooms Data:', roomsData?.data?.rooms);
 
-  const activeRooms = roomsData?.data?.filter(room => room.isActive) || [];
-  const pendingRooms = roomsData?.data?.filter(room => !room.isActive) || [];
-  const totalMessages = roomsData?.data?.reduce((acc, room) => acc + (room.messageCount || 0), 0) || 0;
+  const activeRooms = roomsData?.data?.room?.filter(room => room.isActive) || [];
+  const pendingRooms = roomsData?.data?.room?.filter(room => !room.isActive) || [];
+  const totalMessages = roomsData?.data?.room?.reduce((acc, room) => acc + (room.messageCount || 0), 0) || 0;
 
   const stats = [
     {
