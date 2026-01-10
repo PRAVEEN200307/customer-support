@@ -33,30 +33,99 @@ const AdminChat = () => {
   const queryClient = useQueryClient();
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef({});
+  const [isLoadingHistory, setIsLoadingHistory] = useState({}); // Track loading state per room
+  const [hasLoadedInitialHistory, setHasLoadedInitialHistory] = useState({}); // Track if initial history loaded
+  const lastFetchTimeRef = useRef({}); // Track last fetch time per room
 
-  // Remove refetchInterval - use WebSocket events instead
+  // Main rooms query with caching
   const { data: roomsData, isLoading: isLoadingRooms } = useQuery({
     queryKey: ["admin-rooms"],
-    queryFn: () => chatAPI.getAdminRooms(),
-    staleTime: 30000, // Data is fresh for 30 seconds
+    queryFn: async () => {
+      try {
+        const response = await chatAPI.getAdminRooms();
+        return response.data;
+      } catch (error) {
+        console.error("Error fetching rooms:", error);
+        toast.error("Failed to load chat rooms");
+        throw error;
+      }
+    },
+    staleTime: 60000, // Data is fresh for 60 seconds
+    gcTime: 300000, // Keep in cache for 5 minutes
     refetchOnWindowFocus: false,
+    retry: 1,
   });
 
-  // Fetch initial chat history for a room
-  const fetchInitialHistory = useCallback(async (roomId) => {
-    try {
-      if (!roomId) return [];
-      const response = await chatAPI.getChatHistory(roomId, 50, 0);
-      return response.data.messages || [];
-    } catch (error) {
-      console.error("Error fetching initial history:", error);
-      toast.error("Failed to load chat history");
-      return [];
+  // Fetch chat history with deduplication
+  const fetchChatHistory = useCallback(async (roomId, limit = 50, offset = 0) => {
+    if (!roomId) return [];
+    
+    // Check if we recently fetched for this room
+    const now = Date.now();
+    const lastFetch = lastFetchTimeRef.current[roomId];
+    if (lastFetch && now - lastFetch < 5000) { // 5 second cooldown
+      console.log(`Skipping fetch for room ${roomId}, recent fetch detected`);
+      return messages[roomId] || [];
     }
-  }, []);
+
+    try {
+      setIsLoadingHistory(prev => ({ ...prev, [roomId]: true }));
+      
+      const response = await chatAPI.getChatHistory(roomId, limit, offset);
+      const newMessages = response.data.messages || [];
+      
+      // Update last fetch time
+      lastFetchTimeRef.current[roomId] = now;
+      
+      return newMessages;
+    } catch (error) {
+      console.error("Error fetching chat history:", error);
+      toast.error("Failed to load chat history");
+      return messages[roomId] || [];
+    } finally {
+      setIsLoadingHistory(prev => ({ ...prev, [roomId]: false }));
+    }
+  }, [messages]);
+
+  // Load initial history when room is selected
+  const loadInitialHistory = useCallback(async (roomId) => {
+    if (!roomId || hasLoadedInitialHistory[roomId]) return;
+    
+    try {
+      setIsLoadingHistory(prev => ({ ...prev, [roomId]: true }));
+      const history = await fetchChatHistory(roomId, 50, 0);
+      
+      setMessages(prev => {
+        const existingMessages = prev[roomId] || [];
+        // Merge and deduplicate messages
+        const allMessages = [...existingMessages];
+        history.forEach(newMsg => {
+          if (!allMessages.some(msg => msg.id === newMsg.id)) {
+            allMessages.push(newMsg);
+          }
+        });
+        
+        // Sort by timestamp
+        allMessages.sort(
+          (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+        );
+        
+        return {
+          ...prev,
+          [roomId]: allMessages,
+        };
+      });
+      
+      setHasLoadedInitialHistory(prev => ({ ...prev, [roomId]: true }));
+    } catch (error) {
+      console.error("Error loading initial history:", error);
+    } finally {
+      setIsLoadingHistory(prev => ({ ...prev, [roomId]: false }));
+    }
+  }, [fetchChatHistory, hasLoadedInitialHistory]);
 
   // Correctly extract rooms from the response
-  const rooms = roomsData?.data?.rooms || [];
+  const rooms = roomsData?.rooms || [];
   const selectedRoomData = rooms.find((r) => r.id === selectedRoom);
   const currentMessages = messages[selectedRoom] || [];
   const currentTypingUser = typingUsers[selectedRoom];
@@ -80,15 +149,10 @@ const AdminChat = () => {
 
   // Load initial history when room is selected
   useEffect(() => {
-    if (selectedRoom && !messages[selectedRoom]) {
-      fetchInitialHistory(selectedRoom).then((initialMessages) => {
-        setMessages((prev) => ({
-          ...prev,
-          [selectedRoom]: initialMessages,
-        }));
-      });
+    if (selectedRoom && !hasLoadedInitialHistory[selectedRoom]) {
+      loadInitialHistory(selectedRoom);
     }
-  }, [selectedRoom, fetchInitialHistory, messages]);
+  }, [selectedRoom, loadInitialHistory, hasLoadedInitialHistory]);
 
   // Join socket room when room is selected
   useEffect(() => {
@@ -99,7 +163,6 @@ const AdminChat = () => {
 
   // Handle switching rooms - clear typing indicator
   useEffect(() => {
-    // Clear typing indicator when switching rooms
     if (socket && selectedRoom) {
       // Emit that we stopped typing in previous room (if any)
       Object.keys(typingUsers).forEach(roomId => {
@@ -118,17 +181,19 @@ const AdminChat = () => {
     if (!socket) return;
 
     const handleRoomUpdate = () => {
-      queryClient.invalidateQueries(["admin-rooms"]);
+      // Use a short delay to batch updates
+      setTimeout(() => {
+        queryClient.invalidateQueries(["admin-rooms"]);
+      }, 100);
     };
 
+    // Only listen to these events for room list updates
     socket.on("customer_connected", handleRoomUpdate);
     socket.on("room_closed", handleRoomUpdate);
-    socket.on("receive_message", handleRoomUpdate);
 
     return () => {
       socket.off("customer_connected", handleRoomUpdate);
       socket.off("room_closed", handleRoomUpdate);
-      socket.off("receive_message", handleRoomUpdate);
     };
   }, [socket, queryClient]);
 
@@ -147,103 +212,96 @@ const AdminChat = () => {
       const messageWithTimestamp = {
         ...data,
         createdAt: data.createdAt || data.created_at || new Date().toISOString(),
+        isRead: data.isRead || data.senderId === user?.id, // Mark our own messages as read
       };
-
-      // For our own messages, check if we already have an optimistic version
-      const isOurOwnMessage = data.senderId === user?.id;
 
       setMessages((prev) => {
         const roomMessages = prev[data.roomId] || [];
+        
+        // Check if message already exists (for optimistic updates or duplicates)
+        const existingIndex = roomMessages.findIndex(
+          msg => msg.id === data.id || (msg.isOptimistic && msg.message === data.message && msg.senderId === data.senderId)
+        );
 
-        if (isOurOwnMessage) {
-          // Find and replace optimistic message with same content
-          const optimisticMessageIndex = roomMessages.findIndex(
-            (msg) =>
-              msg.isOptimistic &&
-              msg.message === data.message &&
-              msg.senderId === user?.id
+        let newRoomMessages;
+        if (existingIndex !== -1) {
+          // Replace existing message
+          newRoomMessages = [...roomMessages];
+          newRoomMessages[existingIndex] = messageWithTimestamp;
+        } else {
+          // Add new message
+          newRoomMessages = [...roomMessages, messageWithTimestamp];
+        }
+
+        // Remove any other optimistic messages with same content
+        newRoomMessages = newRoomMessages.filter((msg, index) => {
+          if (!msg.isOptimistic) return true;
+          if (index === existingIndex) return false;
+          
+          // Check if this optimistic message is now replaced
+          return !(
+            msg.senderId === data.senderId && 
+            msg.message === data.message &&
+            Math.abs(new Date(msg.createdAt || 0) - new Date(messageWithTimestamp.createdAt || 0)) < 2000
           );
-
-          if (optimisticMessageIndex !== -1) {
-            const newMessages = [...roomMessages];
-            newMessages[optimisticMessageIndex] = messageWithTimestamp;
-
-            // Sort by timestamp
-            newMessages.sort(
-              (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
-            );
-
-            return {
-              ...prev,
-              [data.roomId]: newMessages,
-            };
-          }
-        }
-
-        // Check if message already exists
-        if (roomMessages.some((msg) => msg.id === data.id)) {
-          return prev;
-        }
-
-        const newMessages = [...roomMessages, messageWithTimestamp];
+        });
 
         // Sort by timestamp
-        newMessages.sort(
+        newRoomMessages.sort(
           (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
         );
 
         return {
           ...prev,
-          [data.roomId]: newMessages,
+          [data.roomId]: newRoomMessages,
         };
       });
-
-      // Update room list
-      queryClient.invalidateQueries(["admin-rooms"]);
 
       // Show notification if not in current room
       if (data.roomId !== selectedRoom) {
         const room = rooms.find((r) => r.id === data.roomId);
-        toast.custom(
-          (t) => (
-            <div
-              className={`${t.visible ? "animate-enter" : "animate-leave"} 
-            max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5`}
-            >
-              <div className="flex-1 w-0 p-4">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0 pt-0.5">
-                    <FiMessageSquare className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div className="ml-3 flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      New message from {room?.customer?.email || "Customer"}
-                    </p>
-                    <p className="mt-1 text-sm text-gray-500 truncate">
-                      {data.message.length > 50
-                        ? `${data.message.substring(0, 50)}...`
-                        : data.message}
-                    </p>
+        if (room) {
+          toast.custom(
+            (t) => (
+              <div
+                className={`${t.visible ? "animate-enter" : "animate-leave"} 
+                max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5`}
+              >
+                <div className="flex-1 w-0 p-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0 pt-0.5">
+                      <FiMessageSquare className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div className="ml-3 flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        New message from {room.customer?.email || "Customer"}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500 truncate">
+                        {data.message.length > 50
+                          ? `${data.message.substring(0, 50)}...`
+                          : data.message}
+                      </p>
+                    </div>
                   </div>
                 </div>
+                <div className="flex border-l border-gray-200">
+                  <button
+                    onClick={() => {
+                      setSelectedRoom(data.roomId);
+                      toast.dismiss(t.id);
+                    }}
+                    className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    Open
+                  </button>
+                </div>
               </div>
-              <div className="flex border-l border-gray-200">
-                <button
-                  onClick={() => {
-                    setSelectedRoom(data.roomId);
-                    toast.dismiss(t.id);
-                  }}
-                  className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  Open
-                </button>
-              </div>
-            </div>
-          ),
-          {
-            duration: 5000,
-          }
-        );
+            ),
+            {
+              duration: 5000,
+            }
+          );
+        }
       }
     };
 
@@ -301,13 +359,39 @@ const AdminChat = () => {
         toast.info("Chat room has been closed");
         setSelectedRoom(null);
       }
-      queryClient.invalidateQueries(["admin-rooms"]);
+      // Invalidate rooms query after a delay
+      setTimeout(() => {
+        queryClient.invalidateQueries(["admin-rooms"]);
+      }, 100);
     };
 
     // Handle customer connected
     const handleCustomerConnected = (data) => {
-      queryClient.invalidateQueries(["admin-rooms"]);
+      // Invalidate rooms query after a delay
+      setTimeout(() => {
+        queryClient.invalidateQueries(["admin-rooms"]);
+      }, 100);
       toast.success(`New customer connected: ${data.customerEmail}`);
+    };
+
+    // Handle message sent confirmation
+    const handleMessageSent = (data) => {
+      console.log("Message sent confirmation:", data);
+      
+      // Update the optimistic message with the real ID
+      if (data.tempId && data.messageId) {
+        setMessages(prev => {
+          const roomMessages = prev[data.roomId] || [];
+          const updatedMessages = roomMessages.map(msg => 
+            msg.id === data.tempId ? { ...msg, id: data.messageId, isOptimistic: false } : msg
+          );
+          
+          return {
+            ...prev,
+            [data.roomId]: updatedMessages,
+          };
+        });
+      }
     };
 
     // Attach event listeners
@@ -316,6 +400,7 @@ const AdminChat = () => {
     socket.on("message_read", handleMessageRead);
     socket.on("room_closed", handleRoomClosed);
     socket.on("customer_connected", handleCustomerConnected);
+    socket.on("message_sent", handleMessageSent);
 
     return () => {
       // Remove event listeners
@@ -324,6 +409,7 @@ const AdminChat = () => {
       socket.off("message_read", handleMessageRead);
       socket.off("room_closed", handleRoomClosed);
       socket.off("customer_connected", handleCustomerConnected);
+      socket.off("message_sent", handleMessageSent);
 
       // Clear all typing timeouts
       Object.values(typingTimeoutRef.current).forEach((timeout) => {
@@ -334,61 +420,71 @@ const AdminChat = () => {
 
   // Handle typing indicator
   useEffect(() => {
-    if (socket && selectedRoom) {
-      const emitTyping = () => {
-        if (message.trim()) {
+    if (!socket || !selectedRoom) return;
+
+    let typingTimeout;
+
+    const emitTyping = () => {
+      if (message.trim()) {
+        socket.emit("typing", {
+          roomId: selectedRoom,
+          isTyping: true,
+        });
+
+        // Clear typing after 1 second of inactivity
+        typingTimeout = setTimeout(() => {
           socket.emit("typing", {
             roomId: selectedRoom,
-            isTyping: true,
+            isTyping: false,
           });
+        }, 1000);
+      } else {
+        socket.emit("typing", {
+          roomId: selectedRoom,
+          isTyping: false,
+        });
+      }
+    };
 
-          // Clear typing after 1 second of inactivity
-          const timeout = setTimeout(() => {
-            socket.emit("typing", {
-              roomId: selectedRoom,
-              isTyping: false,
-            });
-          }, 1000);
+    const debouncedTyping = setTimeout(emitTyping, 300);
 
-          return () => clearTimeout(timeout);
-        }
-      };
-
-      emitTyping();
-    }
+    return () => {
+      clearTimeout(debouncedTyping);
+      clearTimeout(typingTimeout);
+    };
   }, [message, socket, selectedRoom]);
 
   // Mark messages as read when opening a chat
   useEffect(() => {
-    if (socket && selectedRoom && currentMessages.length > 0) {
-      const unreadMessages = currentMessages.filter(
-        (msg) => !msg.isRead && msg.senderId !== user?.id
-      );
+    if (!socket || !selectedRoom || currentMessages.length === 0) return;
 
-      if (unreadMessages.length > 0) {
-        const messageIds = unreadMessages.map((msg) => msg.id);
+    const unreadMessages = currentMessages.filter(
+      (msg) => !msg.isRead && msg.senderId !== user?.id
+    );
 
-        // Update local state immediately
-        setMessages((prev) => {
-          const roomMessages = prev[selectedRoom] || [];
-          const updatedMessages = roomMessages.map((msg) =>
-            messageIds.includes(msg.id) ? { ...msg, isRead: true } : msg
-          );
+    if (unreadMessages.length > 0) {
+      const messageIds = unreadMessages.map((msg) => msg.id);
 
-          return {
-            ...prev,
-            [selectedRoom]: updatedMessages,
-          };
-        });
+      // Update local state immediately
+      setMessages((prev) => {
+        const roomMessages = prev[selectedRoom] || [];
+        const updatedMessages = roomMessages.map((msg) =>
+          messageIds.includes(msg.id) ? { ...msg, isRead: true } : msg
+        );
 
-        // Send to server
-        socket.emit("mark_as_read", {
-          messageIds,
-          roomId: selectedRoom,
-        });
-      }
+        return {
+          ...prev,
+          [selectedRoom]: updatedMessages,
+        };
+      });
+
+      // Send to server
+      socket.emit("mark_as_read", {
+        messageIds,
+        roomId: selectedRoom,
+      });
     }
-  }, [socket, selectedRoom, currentMessages.length, user?.id]);
+  }, [socket, selectedRoom, currentMessages, user?.id]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -396,15 +492,10 @@ const AdminChat = () => {
   }, [currentMessages]);
 
   // Send message with optimistic update
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
 
-    if (
-      !socket ||
-      !selectedRoom ||
-      !message.trim() ||
-      !selectedRoomData?.isActive
-    ) {
+    if (!socket || !selectedRoom || !message.trim() || !selectedRoomData?.isActive) {
       return;
     }
 
@@ -425,7 +516,7 @@ const AdminChat = () => {
       receiverId: selectedRoomData.customerId,
       message: message.trim(),
       messageType: "text",
-      isRead: false,
+      isRead: true, // Our own messages are marked as read immediately
       createdAt: new Date().toISOString(),
       isOptimistic: true,
     };
@@ -446,11 +537,28 @@ const AdminChat = () => {
       };
     });
 
-    // Send via socket
-    socket.emit("send_message", messageData, (ack) => {
+    // Clear input
+    setMessage("");
+
+    // Send via socket with callback
+    socket.emit("send_message", { ...messageData, tempId }, (ack) => {
       if (ack?.success) {
-        // The real message will come via handleReceiveMessage
         console.log("Message sent successfully");
+        
+        // If the server doesn't send back the message via socket, update the optimistic message
+        if (ack.messageId) {
+          setMessages((prev) => {
+            const roomMessages = prev[selectedRoom] || [];
+            const updatedMessages = roomMessages.map((msg) =>
+              msg.id === tempId ? { ...msg, id: ack.messageId, isOptimistic: false } : msg
+            );
+
+            return {
+              ...prev,
+              [selectedRoom]: updatedMessages,
+            };
+          });
+        }
       } else {
         // Remove optimistic message on error
         setMessages((prev) => {
@@ -466,18 +574,14 @@ const AdminChat = () => {
         });
 
         toast.error(ack?.error || "Failed to send message");
+        setMessage(messageData.message); // Restore the message
       }
     });
-
-    setMessage("");
   };
 
   // Close room
   const handleCloseRoom = () => {
-    if (
-      selectedRoom &&
-      window.confirm("Are you sure you want to close this chat?")
-    ) {
+    if (selectedRoom && window.confirm("Are you sure you want to close this chat?")) {
       socket.emit("close_room", selectedRoom, (ack) => {
         if (ack?.success) {
           toast.success("Chat room closed");
@@ -494,6 +598,50 @@ const AdminChat = () => {
   const handleRefreshRooms = () => {
     queryClient.invalidateQueries(["admin-rooms"]);
     toast.success("Rooms refreshed");
+  };
+
+  // Load more messages (for pagination/infinite scroll)
+  const handleLoadMore = async () => {
+    if (!selectedRoom || isLoadingHistory[selectedRoom]) return;
+    
+    const currentRoomMessages = messages[selectedRoom] || [];
+    const oldestMessage = currentRoomMessages[0];
+    
+    if (!oldestMessage) return;
+    
+    try {
+      setIsLoadingHistory(prev => ({ ...prev, [selectedRoom]: true }));
+      const olderMessages = await fetchChatHistory(selectedRoom, 50, currentRoomMessages.length);
+      
+      if (olderMessages.length > 0) {
+        setMessages(prev => {
+          const existingMessages = prev[selectedRoom] || [];
+          const allMessages = [...olderMessages, ...existingMessages];
+          
+          // Remove duplicates
+          const uniqueMessages = allMessages.reduce((acc, msg) => {
+            if (!acc.some(m => m.id === msg.id)) {
+              acc.push(msg);
+            }
+            return acc;
+          }, []);
+          
+          // Sort by timestamp
+          uniqueMessages.sort(
+            (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+          );
+          
+          return {
+            ...prev,
+            [selectedRoom]: uniqueMessages,
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Error loading more messages:", error);
+    } finally {
+      setIsLoadingHistory(prev => ({ ...prev, [selectedRoom]: false }));
+    }
   };
 
   // Filter rooms based on search term
@@ -793,7 +941,11 @@ const AdminChat = () => {
 
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-              {displayMessages.length === 0 ? (
+              {isLoadingHistory[selectedRoom] && displayMessages.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-gray-500">Loading messages...</div>
+                </div>
+              ) : displayMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
                   <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-4">
                     <FiUsers className="w-10 h-10 text-blue-600" />
@@ -806,9 +958,22 @@ const AdminChat = () => {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {/* Load More Button */}
+                  {displayMessages.length >= 50 && (
+                    <div className="sticky top-0 z-20 flex justify-center mb-4">
+                      <button
+                        onClick={handleLoadMore}
+                        disabled={isLoadingHistory[selectedRoom]}
+                        className="bg-blue-500 text-white text-xs font-medium px-4 py-2 rounded-full hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isLoadingHistory[selectedRoom] ? "Loading..." : "Load older messages"}
+                      </button>
+                    </div>
+                  )}
+                  
                   {Object.entries(messageGroups).map(([date, dateMessages]) => (
                     <div key={date}>
-                      <div className="sticky top-0 z-10 flex justify-center mb-4">
+                      <div className="sticky top-10 z-10 flex justify-center mb-4">
                         <div className="bg-blue-100 text-blue-800 text-xs font-medium px-4 py-2 rounded-full">
                           {date}
                         </div>
