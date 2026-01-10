@@ -36,6 +36,7 @@ const AdminChat = () => {
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef({});
 
+
   // Fetch all rooms
   const { data: roomsData, isLoading: isLoadingRooms } = useQuery({
     queryKey: ["admin-rooms"],
@@ -61,6 +62,7 @@ const AdminChat = () => {
   const selectedRoomData = rooms.find((r) => r.id === selectedRoom);
   const currentMessages = messages[selectedRoom] || [];
   const currentTypingUser = typingUsers[selectedRoom];
+
 
   // Auto-select room from URL or first active room
   useEffect(() => {
@@ -118,6 +120,7 @@ const AdminChat = () => {
 
       // Add message to the room's messages
       setMessages((prev) => {
+        console.log("Adding message to room:", data.roomId);
         const roomMessages = prev[data.roomId] || [];
 
         // Check if message already exists
@@ -126,6 +129,8 @@ const AdminChat = () => {
         }
 
         const newMessages = [...roomMessages, messageWithTimestamp];
+
+
 
         // Sort by timestamp
         newMessages.sort(
@@ -356,35 +361,6 @@ const AdminChat = () => {
       receiverId: selectedRoomData.customerId,
     };
 
-    // Add message to local state immediately (optimistic update)
-    const tempId = `temp-${Date.now()}`;
-    const optimisticMessage = {
-      id: tempId,
-      roomId: selectedRoom,
-      senderId: user?.id,
-      senderEmail: user?.email,
-      receiverId: selectedRoomData.customerId,
-      message: message.trim(),
-      messageType: "text",
-      isRead: false,
-      createdAt: new Date().toISOString(),
-      isOptimistic: true,
-    };
-
-    setMessages((prev) => {
-      const roomMessages = prev[selectedRoom] || [];
-      const newMessages = [...roomMessages, optimisticMessage];
-
-      // Sort by timestamp
-      newMessages.sort(
-        (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
-      );
-
-      return {
-        ...prev,
-        [selectedRoom]: newMessages,
-      };
-    });
 
     // Send via socket
     socket.emit("send_message", messageData, (ack) => {
@@ -492,6 +468,8 @@ const AdminChat = () => {
 
   const messageGroups = groupMessagesByDate(currentMessages);
 
+  console.log("Rendered AdminChat with rooms:",messageGroups);
+
   const formatLastSeen = (dateValue) => {
     if (!dateValue) return "No messages";
 
@@ -501,6 +479,7 @@ const AdminChat = () => {
 
     return formatDistanceToNow(date, { addSuffix: true });
   };
+
 
   return (
     <div className="flex h-[calc(100vh-12rem)] bg-white rounded-xl shadow-lg overflow-hidden">
@@ -737,63 +716,95 @@ const AdminChat = () => {
                         </div>
                       </div>
                       <div className="space-y-4">
+                    
+
                         {dateMessages.map((msg) => {
+
                           const isSender = msg.senderId === user?.id;
                           const isRead = msg.isRead;
                           const isOptimistic = msg.isOptimistic;
+                          const timestamp = msg.createdAt
+                            ? new Date(msg.createdAt)
+                            : null;
 
                           return (
                             <div
                               key={msg.id}
                               className={`flex ${
                                 isSender ? "justify-end" : "justify-start"
-                              } ${isOptimistic ? "opacity-70" : ""}`}
+                              } mb-2 px-4`}
                             >
+                              {/* WhatsApp-style message bubble */}
                               <div
-                                className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                                className={`relative max-w-[65%] rounded-2xl px-3 py-2 ${
                                   isSender
                                     ? isOptimistic
-                                      ? "bg-blue-400 text-white rounded-br-none"
-                                      : "bg-blue-600 text-white rounded-br-none"
-                                    : "bg-white text-gray-800 shadow rounded-bl-none"
-                                }`}
+                                      ? "bg-[#D9FDD3] rounded-tr-sm"
+                                      : "bg-[#D9FDD3] rounded-tr-sm"
+                                    : "bg-white rounded-tl-sm border border-gray-200"
+                                } shadow-sm`}
                               >
-                                <div className="text-sm whitespace-pre-wrap break-words">
+                                {/* Message content */}
+                                <div className="text-sm whitespace-pre-wrap break-words pb-1">
                                   {msg.message}
                                 </div>
+
+                                {/* Timestamp and status row */}
                                 <div
-                                  className={`text-xs mt-2 flex items-center space-x-2 ${
-                                    isSender
-                                      ? "text-blue-200 justify-end"
-                                      : "text-gray-500 justify-between"
+                                  className={`flex items-center justify-end mt-1 space-x-1 ${
+                                    isSender ? "" : "justify-end"
                                   }`}
                                 >
-                                  <span>
-                                    {msg.createdAt
-                                      ? format(new Date(msg.createdAt), "HH:mm")
-                                      : ""}
-                                  </span>
-                                  {isSender && !isOptimistic && (
-                                    <div className="flex items-center space-x-1">
-                                      {isRead ? (
-                                        <>
-                                          <FiCheckCircle className="w-3.5 h-3.5" />
-                                          <span className="text-xs">Read</span>
-                                        </>
+                                  {/* Time */}
+                                  {timestamp && (
+                                    <span
+                                      className={`text-xs ${
+                                        isSender
+                                          ? "text-gray-500"
+                                          : "text-gray-500"
+                                      }`}
+                                    >
+                                      {format(timestamp, "HH:mm")}
+                                    </span>
+                                  )}
+
+                                  {/* Status icons for sender */}
+                                  {isSender && (
+                                    <div className="flex items-center">
+                                      {isOptimistic ? (
+                                        <div className="flex items-center space-x-1 ml-1">
+                                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                                          <span className="text-xs text-gray-400 italic">
+                                            Sending
+                                          </span>
+                                        </div>
                                       ) : (
                                         <>
-                                          <FiCheck className="w-3.5 h-3.5" />
-                                          <span className="text-xs">Sent</span>
+                                          {/* Single check for sent, double check for delivered, blue double check for read */}
+                                          {isRead ? (
+                                            <FiCheckCircle className="w-3.5 h-3.5 text-blue-500 ml-1" />
+                                          ) : (
+                                            <div className="relative w-3.5 h-3.5 ml-1">
+                                              <FiCheck className="w-3.5 h-3.5 text-gray-500 absolute top-0 left-0" />
+                                              <FiCheck className="w-3.5 h-3.5 text-gray-500 absolute top-0 left-1" />
+                                            </div>
+                                          )}
                                         </>
                                       )}
                                     </div>
                                   )}
-                                  {isOptimistic && (
-                                    <span className="text-xs italic">
-                                      Sending...
-                                    </span>
-                                  )}
                                 </div>
+
+                                {/* WhatsApp-style bubble tail */}
+                                {isSender ? (
+                                  <div className="absolute -right-2 top-0 w-2 h-4 overflow-hidden">
+                                    <div className="w-4 h-4 bg-[#D9FDD3] transform rotate-45 origin-bottom-left"></div>
+                                  </div>
+                                ) : (
+                                  <div className="absolute -left-2 top-0 w-2 h-4 overflow-hidden">
+                                    <div className="w-4 h-4 bg-white transform rotate-45 origin-bottom-right border-l border-b border-gray-200"></div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
