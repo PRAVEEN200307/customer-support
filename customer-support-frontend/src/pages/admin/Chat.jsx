@@ -1,6 +1,5 @@
-// src/pages/admin/Chat.js
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { chatAPI } from "../../services/api";
 import { useSocket } from "../../context/SocketContext";
@@ -17,8 +16,7 @@ import {
   FiSearch,
   FiClock,
   FiMessageSquare,
-  FiUser,
-  FiAlertCircle,
+  FiRefreshCw,
 } from "react-icons/fi";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 
@@ -36,12 +34,12 @@ const AdminChat = () => {
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef({});
 
-
-  // Fetch all rooms
+  // Remove refetchInterval - use WebSocket events instead
   const { data: roomsData, isLoading: isLoadingRooms } = useQuery({
     queryKey: ["admin-rooms"],
     queryFn: () => chatAPI.getAdminRooms(),
-    refetchInterval: 10000, // Refresh every 10 seconds
+    staleTime: 30000, // Data is fresh for 30 seconds
+    refetchOnWindowFocus: false,
   });
 
   // Fetch initial chat history for a room
@@ -62,7 +60,6 @@ const AdminChat = () => {
   const selectedRoomData = rooms.find((r) => r.id === selectedRoom);
   const currentMessages = messages[selectedRoom] || [];
   const currentTypingUser = typingUsers[selectedRoom];
-
 
   // Auto-select room from URL or first active room
   useEffect(() => {
@@ -100,7 +97,42 @@ const AdminChat = () => {
     }
   }, [socket, selectedRoom]);
 
-  // Socket event handlers
+  // Handle switching rooms - clear typing indicator
+  useEffect(() => {
+    // Clear typing indicator when switching rooms
+    if (socket && selectedRoom) {
+      // Emit that we stopped typing in previous room (if any)
+      Object.keys(typingUsers).forEach(roomId => {
+        if (typingUsers[roomId] && roomId !== selectedRoom) {
+          socket.emit("typing", {
+            roomId,
+            isTyping: false,
+          });
+        }
+      });
+    }
+  }, [selectedRoom, socket]);
+
+  // WebSocket event handlers for room updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleRoomUpdate = () => {
+      queryClient.invalidateQueries(["admin-rooms"]);
+    };
+
+    socket.on("customer_connected", handleRoomUpdate);
+    socket.on("room_closed", handleRoomUpdate);
+    socket.on("receive_message", handleRoomUpdate);
+
+    return () => {
+      socket.off("customer_connected", handleRoomUpdate);
+      socket.off("room_closed", handleRoomUpdate);
+      socket.off("receive_message", handleRoomUpdate);
+    };
+  }, [socket, queryClient]);
+
+  // Socket event handlers for messages
   useEffect(() => {
     if (!socket) return;
 
@@ -114,14 +146,39 @@ const AdminChat = () => {
       // Ensure the message has createdAt field
       const messageWithTimestamp = {
         ...data,
-        createdAt:
-          data.createdAt || data.created_at || new Date().toISOString(),
+        createdAt: data.createdAt || data.created_at || new Date().toISOString(),
       };
 
-      // Add message to the room's messages
+      // For our own messages, check if we already have an optimistic version
+      const isOurOwnMessage = data.senderId === user?.id;
+
       setMessages((prev) => {
-        console.log("Adding message to room:", data.roomId);
         const roomMessages = prev[data.roomId] || [];
+
+        if (isOurOwnMessage) {
+          // Find and replace optimistic message with same content
+          const optimisticMessageIndex = roomMessages.findIndex(
+            (msg) =>
+              msg.isOptimistic &&
+              msg.message === data.message &&
+              msg.senderId === user?.id
+          );
+
+          if (optimisticMessageIndex !== -1) {
+            const newMessages = [...roomMessages];
+            newMessages[optimisticMessageIndex] = messageWithTimestamp;
+
+            // Sort by timestamp
+            newMessages.sort(
+              (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+            );
+
+            return {
+              ...prev,
+              [data.roomId]: newMessages,
+            };
+          }
+        }
 
         // Check if message already exists
         if (roomMessages.some((msg) => msg.id === data.id)) {
@@ -129,8 +186,6 @@ const AdminChat = () => {
         }
 
         const newMessages = [...roomMessages, messageWithTimestamp];
-
-
 
         // Sort by timestamp
         newMessages.sort(
@@ -255,18 +310,12 @@ const AdminChat = () => {
       toast.success(`New customer connected: ${data.customerEmail}`);
     };
 
-    // Handle customer online status
-    const handleCustomerOnline = (data) => {
-      queryClient.invalidateQueries(["admin-rooms"]);
-    };
-
     // Attach event listeners
     socket.on("receive_message", handleReceiveMessage);
     socket.on("user_typing", handleUserTyping);
     socket.on("message_read", handleMessageRead);
     socket.on("room_closed", handleRoomClosed);
     socket.on("customer_connected", handleCustomerConnected);
-    socket.on("customer_online", handleCustomerOnline);
 
     return () => {
       // Remove event listeners
@@ -275,32 +324,37 @@ const AdminChat = () => {
       socket.off("message_read", handleMessageRead);
       socket.off("room_closed", handleRoomClosed);
       socket.off("customer_connected", handleCustomerConnected);
-      socket.off("customer_online", handleCustomerOnline);
 
       // Clear all typing timeouts
       Object.values(typingTimeoutRef.current).forEach((timeout) => {
         clearTimeout(timeout);
       });
     };
-  }, [socket, selectedRoom, queryClient, rooms]);
+  }, [socket, selectedRoom, queryClient, rooms, user?.id]);
 
   // Handle typing indicator
   useEffect(() => {
-    if (socket && selectedRoom && message.trim()) {
-      socket.emit("typing", {
-        roomId: selectedRoom,
-        isTyping: true,
-      });
+    if (socket && selectedRoom) {
+      const emitTyping = () => {
+        if (message.trim()) {
+          socket.emit("typing", {
+            roomId: selectedRoom,
+            isTyping: true,
+          });
 
-      // Clear typing after 1 second of inactivity
-      const timeout = setTimeout(() => {
-        socket.emit("typing", {
-          roomId: selectedRoom,
-          isTyping: false,
-        });
-      }, 1000);
+          // Clear typing after 1 second of inactivity
+          const timeout = setTimeout(() => {
+            socket.emit("typing", {
+              roomId: selectedRoom,
+              isTyping: false,
+            });
+          }, 1000);
 
-      return () => clearTimeout(timeout);
+          return () => clearTimeout(timeout);
+        }
+      };
+
+      emitTyping();
     }
   }, [message, socket, selectedRoom]);
 
@@ -341,7 +395,7 @@ const AdminChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages]);
 
-  // Send message
+  // Send message with optimistic update
   const handleSendMessage = (e) => {
     e.preventDefault();
 
@@ -361,31 +415,42 @@ const AdminChat = () => {
       receiverId: selectedRoomData.customerId,
     };
 
+    // Generate a unique ID for the optimistic message
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const optimisticMessage = {
+      id: tempId,
+      roomId: selectedRoom,
+      senderId: user?.id,
+      senderEmail: user?.email,
+      receiverId: selectedRoomData.customerId,
+      message: message.trim(),
+      messageType: "text",
+      isRead: false,
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+
+    // Add optimistic message
+    setMessages((prev) => {
+      const roomMessages = prev[selectedRoom] || [];
+      const newMessages = [...roomMessages, optimisticMessage];
+
+      // Sort by timestamp
+      newMessages.sort(
+        (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+      );
+
+      return {
+        ...prev,
+        [selectedRoom]: newMessages,
+      };
+    });
 
     // Send via socket
     socket.emit("send_message", messageData, (ack) => {
       if (ack?.success) {
-        // Replace optimistic message with real one
-        setMessages((prev) => {
-          const roomMessages = prev[selectedRoom] || [];
-          const filteredMessages = roomMessages.filter(
-            (msg) => msg.id !== tempId
-          );
-
-          if (ack.message) {
-            const newMessages = [...filteredMessages, ack.message];
-            newMessages.sort(
-              (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
-            );
-
-            return {
-              ...prev,
-              [selectedRoom]: newMessages,
-            };
-          }
-
-          return prev;
-        });
+        // The real message will come via handleReceiveMessage
+        console.log("Message sent successfully");
       } else {
         // Remove optimistic message on error
         setMessages((prev) => {
@@ -425,6 +490,12 @@ const AdminChat = () => {
     }
   };
 
+  // Manual refresh rooms
+  const handleRefreshRooms = () => {
+    queryClient.invalidateQueries(["admin-rooms"]);
+    toast.success("Rooms refreshed");
+  };
+
   // Filter rooms based on search term
   const filteredRooms = searchTerm
     ? rooms.filter(
@@ -443,7 +514,7 @@ const AdminChat = () => {
     const groups = {};
 
     messages.forEach((msg) => {
-      const timestamp = msg.created_at;
+      const timestamp = msg.createdAt || msg.created_at;
       if (!timestamp) return;
 
       const date = new Date(timestamp);
@@ -466,8 +537,28 @@ const AdminChat = () => {
     return groups;
   };
 
-  const messageGroups = groupMessagesByDate(currentMessages);
+  // Filter out duplicate optimistic messages
+  const getDisplayMessages = () => {
+    const roomMessages = currentMessages || [];
+    
+    // Filter out optimistic messages that have been replaced by real ones
+    return roomMessages.filter((msg, index, array) => {
+      if (!msg.isOptimistic) return true;
+      
+      // Check if there's a real message with same content from same sender
+      const hasRealDuplicate = array.some(otherMsg => 
+        !otherMsg.isOptimistic && 
+        otherMsg.message === msg.message && 
+        otherMsg.senderId === msg.senderId &&
+        Math.abs(new Date(otherMsg.createdAt || 0) - new Date(msg.createdAt || 0)) < 2000
+      );
+      
+      return !hasRealDuplicate;
+    });
+  };
 
+  const displayMessages = getDisplayMessages();
+  const messageGroups = groupMessagesByDate(displayMessages);
 
   const formatLastSeen = (dateValue) => {
     if (!dateValue) return "No messages";
@@ -479,7 +570,6 @@ const AdminChat = () => {
     return formatDistanceToNow(date, { addSuffix: true });
   };
 
-
   return (
     <div className="flex h-[calc(100vh-12rem)] bg-white rounded-xl shadow-lg overflow-hidden">
       {/* Sidebar - Chat Rooms List */}
@@ -489,9 +579,18 @@ const AdminChat = () => {
             <h2 className="text-lg font-semibold text-gray-900">
               Active Chats
             </h2>
-            <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
-              {rooms.length || 0}
-            </span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleRefreshRooms}
+                className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                title="Refresh rooms"
+              >
+                <FiRefreshCw className={`w-4 h-4 ${isLoadingRooms ? 'animate-spin' : ''}`} />
+              </button>
+              <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
+                {rooms.length || 0}
+              </span>
+            </div>
           </div>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -561,8 +660,8 @@ const AdminChat = () => {
                         </p>
                         <div className="flex items-center text-xs text-gray-500">
                           <FiClock className="w-3 h-3 mr-1" />
-                          {lastMessage?.created_at
-                            ? formatLastSeen(lastMessage.created_at)
+                          {lastMessage?.createdAt
+                            ? formatLastSeen(lastMessage.createdAt)
                             : formatLastSeen(room?.lastMessageAt)}
                         </div>
                       </div>
@@ -694,7 +793,7 @@ const AdminChat = () => {
 
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-              {currentMessages.length === 0 ? (
+              {displayMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
                   <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-4">
                     <FiUsers className="w-10 h-10 text-blue-600" />
@@ -714,16 +813,15 @@ const AdminChat = () => {
                           {date}
                         </div>
                       </div>
-                      <div className="space-y-4">
-                    
-
+                      <div className="space-y-1">
                         {dateMessages.map((msg) => {
-
                           const isSender = msg.senderId === user?.id;
                           const isRead = msg.isRead;
                           const isOptimistic = msg.isOptimistic;
                           const timestamp = msg.createdAt
                             ? new Date(msg.createdAt)
+                            : msg.created_at
+                            ? new Date(msg.created_at)
                             : null;
 
                           return (
@@ -731,15 +829,15 @@ const AdminChat = () => {
                               key={msg.id}
                               className={`flex ${
                                 isSender ? "justify-end" : "justify-start"
-                              } mb-2 px-4`}
+                              } mb-1 px-4`}
                             >
                               {/* WhatsApp-style message bubble */}
                               <div
                                 className={`relative max-w-[65%] rounded-2xl px-3 py-2 ${
                                   isSender
                                     ? isOptimistic
-                                      ? "bg-[#D9FDD3] rounded-tr-sm"
-                                      : "bg-[#D9FDD3] rounded-tr-sm"
+                                      ? "bg-[#D9FDD3] opacity-70 rounded-tr-sm"
+                                      : "bg-[#DCF8C6] rounded-tr-sm"
                                     : "bg-white rounded-tl-sm border border-gray-200"
                                 } shadow-sm`}
                               >
@@ -756,13 +854,7 @@ const AdminChat = () => {
                                 >
                                   {/* Time */}
                                   {timestamp && (
-                                    <span
-                                      className={`text-xs ${
-                                        isSender
-                                          ? "text-gray-500"
-                                          : "text-gray-500"
-                                      }`}
-                                    >
+                                    <span className="text-xs text-gray-500">
                                       {format(timestamp, "HH:mm")}
                                     </span>
                                   )}
@@ -797,7 +889,7 @@ const AdminChat = () => {
                                 {/* WhatsApp-style bubble tail */}
                                 {isSender ? (
                                   <div className="absolute -right-2 top-0 w-2 h-4 overflow-hidden">
-                                    <div className="w-4 h-4 bg-[#D9FDD3] transform rotate-45 origin-bottom-left"></div>
+                                    <div className="w-4 h-4 bg-[#DCF8C6] transform rotate-45 origin-bottom-left"></div>
                                   </div>
                                 ) : (
                                   <div className="absolute -left-2 top-0 w-2 h-4 overflow-hidden">
