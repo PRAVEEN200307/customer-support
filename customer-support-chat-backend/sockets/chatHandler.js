@@ -198,6 +198,7 @@ class ChatHandler {
         messageType: savedMessage.messageType,
         isRead: false,
         createdAt: savedMessage.createdAt,
+        created_at: savedMessage.createdAt, // Add this for compatibility
       };
 
       // Send confirmation to sender
