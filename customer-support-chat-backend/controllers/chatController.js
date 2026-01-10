@@ -5,8 +5,17 @@ const { Op } = require('sequelize');
 
 class ChatController {
   // Get or create chat room for customer
-  static async getOrCreateRoom(userId, adminId = "ff283a6d-fa7e-4d64-9a1f-044e380162e1") {
+  static async getOrCreateRoom(userId) {
     try {
+
+      const admin = await require('../models/User').findOne({
+      where: { userType: 'admin', isActive: true }
+    });
+
+     if (!admin) {
+      throw new Error('No admin available');
+    }
+
       let room = await ChatRoom.findOne({
         where: { customerId: userId },
         include: [
@@ -18,7 +27,7 @@ class ChatController {
       if (!room) {
         room = await ChatRoom.create({
           customerId: userId,
-          adminId,
+          adminId:admin.id,
           roomName: `room_${userId}`,
           isActive: true
         });
@@ -34,6 +43,9 @@ class ChatController {
   // Get chat history for user
   static async getChatHistory(roomId, userId, limit = 100, offset = 0) {
     try {
+
+      
+
       // Check if user has cleared chat
       const deletedChat = await DeletedChat.findOne({
         where: { userId, roomId }
