@@ -62,7 +62,10 @@ api.interceptors.response.use(
 
 export const chatAPI = {
   getMyRoom: () => api.get('/chat/my-room'),
-  getChatHistory: (roomId, params) => api.get(`/chat/history/${roomId}`, { params }),
+  getChatHistory: (roomId, limit = 100, offset = 0) => {
+    const params = typeof limit === 'object' ? limit : { limit, offset };
+    return api.get(`/chat/history/${roomId}`, { params });
+  },
   markMessagesAsRead: (messageIds) => api.post('/chat/messages/read', { messageIds }),
   clearChatHistory: (roomId) => api.post(`/chat/clear/${roomId}`),
   getUnreadCount: () => api.get('/chat/unread-count'),
@@ -71,7 +74,7 @@ export const chatAPI = {
 
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
-  signup: (userData) => api.post('/auth/singup', userData),
+  signup: (userData) => api.post('/auth/signup', userData),
   getCurrentUser: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
   verifyEmail: (token) => api.get(`/auth/verify-email?token=${token}`),
