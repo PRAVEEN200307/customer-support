@@ -443,7 +443,7 @@ const AdminChat = () => {
     const groups = {};
 
     messages.forEach((msg) => {
-      const timestamp = msg.createdAt;
+      const timestamp = msg.created_at;
       if (!timestamp) return;
 
       const date = new Date(timestamp);
@@ -468,7 +468,6 @@ const AdminChat = () => {
 
   const messageGroups = groupMessagesByDate(currentMessages);
 
-  console.log("Rendered AdminChat with rooms:",messageGroups);
 
   const formatLastSeen = (dateValue) => {
     if (!dateValue) return "No messages";
