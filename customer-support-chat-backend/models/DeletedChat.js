@@ -31,7 +31,15 @@ const DeletedChat = sequelize.define('DeletedChat', {
   tableName: 'deleted_chats',
   timestamps: true,
   createdAt: 'deleted_at',
-  updatedAt: false
+  updatedAt: false,
+
+  
+  indexes: [
+    {
+      unique: true,
+      fields: ['user_id', 'room_id']
+    }
+  ]
 });
 
 // Associations
