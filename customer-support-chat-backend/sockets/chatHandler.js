@@ -118,6 +118,11 @@ class ChatHandler {
     socket.on("join_room", (roomId) => {
       this.handleJoinRoom(socket, roomId);
     });
+
+    // Close room (admin only)
+    socket.on("close_room", async (roomId, callback) => {
+      await this.handleCloseRoom(socket, userId, isAdmin, roomId, callback);
+    });
   }
 
   async handleSendMessage(socket, userId, isAdmin, data) {
@@ -376,6 +381,63 @@ class ChatHandler {
     } catch (error) {
       console.error("Error clearing chat:", error);
       socket.emit("error", { message: "Failed to clear chat" });
+    }
+  }
+
+  async handleCloseRoom(socket, userId, isAdmin, roomId, callback) {
+    try {
+      if (!isAdmin) {
+        if (callback) callback({ success: false, error: "Access denied. Admin only." });
+        return;
+      }
+
+      if (!roomId) {
+        if (callback) callback({ success: false, error: "Room ID is required" });
+        return;
+      }
+
+      // Get room info before deletion to notify customer
+      const ChatRoom = require("../models/ChatRoom");
+      const room = await ChatRoom.findByPk(roomId);
+      
+      if (!room) {
+        if (callback) callback({ success: false, error: "Chat room not found" });
+        return;
+      }
+
+      const roomName = room.roomName;
+      const customerId = room.customerId;
+
+      // Close the room in DB
+      await ChatController.adminCloseChat(roomId);
+
+      // Notify all participants in the room
+      this.io.to(roomName).emit("room_closed", { roomId });
+
+      // Specifically notify the customer if they are connected
+      const customerSocketId = this.userSockets.get(customerId);
+      if (customerSocketId) {
+        this.io.to(customerSocketId).emit("room_closed", { roomId });
+      }
+
+      // Make all sockets leave the room
+      const socketsInRoom = await this.io.in(roomName).fetchSockets();
+      socketsInRoom.forEach((s) => {
+        s.leave(roomName);
+        if (s.roomId === roomId) {
+          delete s.roomId;
+          delete s.roomName;
+        }
+      });
+
+      if (callback) callback({ success: true });
+      
+      // Notify other admins
+      this.io.to("admin-room").emit("room_deleted", { roomId });
+      
+    } catch (error) {
+      console.error("Error closing room via socket:", error);
+      if (callback) callback({ success: false, error: error.message });
     }
   }
 

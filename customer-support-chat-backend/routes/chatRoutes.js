@@ -161,4 +161,37 @@ router.get('/admin/rooms', verifyToken, async (req, res) => {
   }
 });
 
+// Admin only: Close and delete chat room
+router.delete('/admin/close/:roomId', verifyToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.userType !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin only.'
+      });
+    }
+
+    const { roomId } = req.params;
+    await ChatController.adminCloseChat(roomId);
+
+    res.json({
+      success: true,
+      message: 'Chat room and history deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error closing chat:', error);
+    if (error.message === 'Chat room not found') {
+      return res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
 module.exports = router;

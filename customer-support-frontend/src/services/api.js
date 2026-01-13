@@ -70,6 +70,7 @@ export const chatAPI = {
   clearChatHistory: (roomId) => api.post(`/chat/clear/${roomId}`),
   getUnreadCount: () => api.get('/chat/unread-count'),
   getAdminRooms: () => api.get('/chat/admin/rooms'),
+  closeAdminRoom: (roomId) => api.delete(`/chat/admin/close/${roomId}`),
 };
 
 export const authAPI = {

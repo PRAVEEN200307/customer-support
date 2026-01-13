@@ -212,6 +212,25 @@ class ChatController {
       throw error;
     }
   }
+
+  // Admin: Close and delete chat room and all associated messages
+  static async adminCloseChat(roomId) {
+    try {
+      const room = await ChatRoom.findByPk(roomId);
+      if (!room) {
+        throw new Error("Chat room not found");
+      }
+
+      // Delete the room. Due to ON DELETE CASCADE in DB, 
+      // messages and deleted_chats will be deleted automatically.
+      await room.destroy();
+
+      return true;
+    } catch (error) {
+      console.error("Error closing chat room:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = ChatController;
