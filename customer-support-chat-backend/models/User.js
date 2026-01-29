@@ -20,7 +20,24 @@ const User = sequelize.define('User', {
   passwordHash: {
     type: DataTypes.STRING,
     field: 'password_hash',
-    allowNull: false
+    allowNull: true
+  },
+  googleId: {
+    type: DataTypes.STRING,
+    field: 'google_id',
+    unique: true,
+    allowNull: true
+  },
+  facebookId: {
+    type: DataTypes.STRING,
+    field: 'facebook_id',
+    unique: true,
+    allowNull: true
+  },
+  avatarUrl: {
+    type: DataTypes.TEXT,
+    field: 'avatar_url',
+    allowNull: true
   },
   isVerified: {
     type: DataTypes.BOOLEAN,
@@ -90,6 +107,21 @@ const User = sequelize.define('User', {
     type: DataTypes.VIRTUAL,
     get() { return this.userType; },
     set(val) { this.userType = val; }
+  },
+  google_id: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.googleId; },
+    set(val) { this.googleId = val; }
+  },
+  facebook_id: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.facebookId; },
+    set(val) { this.facebookId = val; }
+  },
+  avatar_url: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.avatarUrl; },
+    set(val) { this.avatarUrl = val; }
   }
 }, {
   tableName: 'users',

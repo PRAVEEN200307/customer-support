@@ -7,7 +7,7 @@ The Authentication module handles user registration, login, email verification, 
 ### Endpoints
 
 #### **Signup**
-- **URL**: `/api/auth/singup`
+- **URL**: `/api/auth/signup`
 - **Method**: `POST`
 - **Description**: Registers a new user. Default user type is 'customer'.
 - **Request Body**:

@@ -3,7 +3,7 @@ import api from './api';
 export const authService = {
   // Signup
   signup: async (userData) => {
-    const response = await api.post('/auth/singup', userData);
+    const response = await api.post('/auth/signup', userData);
     return response.data;
   },
 

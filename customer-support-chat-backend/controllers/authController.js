@@ -10,6 +10,7 @@ class AuthController {
     this.refreshToken = this.refreshToken.bind(this);
     this.logout = this.logout.bind(this);
     this.getCurrentUser = this.getCurrentUser.bind(this);
+    this.socialLoginSuccess = this.socialLoginSuccess.bind(this);
   }
 
   // Generate JWT token
@@ -372,6 +373,33 @@ class AuthController {
         success: false,
         message: 'Internal server error'
       });
+    }
+  }
+  // Social login success handler
+  async socialLoginSuccess(req, res) {
+    try {
+      const user = req.user;
+      const ipAddress = req.ip;
+      const userAgent = req.get('User-Agent');
+
+      // Generate tokens
+      const accessToken = this.generateToken(user);
+      const refreshToken = this.generateRefreshToken(user);
+
+      // Store refresh token
+      const refreshTokenExpiry = new Date();
+      refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 7);
+      await User.storeRefreshToken(user.id, refreshToken, refreshTokenExpiry);
+
+      // Log successful login
+      await User.logAudit(user.id, 'social_login', ipAddress, userAgent, 'success');
+
+      // Redirect to frontend with tokens
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      res.redirect(`${frontendUrl}/customer/chat?token=${accessToken}&refreshToken=${refreshToken}`);
+    } catch (error) {
+      console.error('Social login success error:', error);
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?error=social_auth_failed`);
     }
   }
 }

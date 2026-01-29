@@ -11,6 +11,18 @@ const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlToken = searchParams.get('token');
+    const urlRefreshToken = searchParams.get('refreshToken');
+
+    if (urlToken && urlRefreshToken) {
+      localStorage.setItem('accessToken', urlToken);
+      localStorage.setItem('refreshToken', urlRefreshToken);
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+
     const token = localStorage.getItem('accessToken');
     if (token) {
       try {
@@ -49,7 +61,7 @@ const AuthProvider = ({ children }) => {
 
   const signup = async (userData) => {
     try {
-      const response = await api.post('/auth/singup', userData);
+      const response = await api.post('/auth/signup', userData);
       return { success: true, data: response.data };
     } catch (error) {
       return { 

@@ -46,8 +46,7 @@ function App() {
                   <Layout />
                 </ProtectedRoute>
               }>
-                <Route index element={<Navigate to="dashboard" />} />
-                <Route path="dashboard" element={<CustomerDashboard />} />
+                <Route index element={<Navigate to="chat" />} />
                 <Route path="chat" element={<CustomerChat />} />
               </Route>
               
@@ -57,10 +56,8 @@ function App() {
                   <Layout />
                 </ProtectedRoute>
               }>
-                <Route index element={<Navigate to="dashboard" />} />
-                <Route path="dashboard" element={<AdminDashboard />} />
+                <Route index element={<Navigate to="chat" />} />
                 <Route path="chat" element={<AdminChat />} />
-                <Route path="rooms" element={<AdminRooms />} />
               </Route>
               
               {/* Default Route */}

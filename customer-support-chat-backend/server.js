@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const { sequelize } = require('./config/database');
+const passport = require('./config/passport');
 const ChatHandler = require('./sockets/chatHandler');
 
 // Import routes
@@ -29,6 +30,7 @@ const io = new Server(server, {
 // Initialize Chat Handler
 const chatHandler = new ChatHandler(io);
 chatHandler.initialize();
+
 
 // Security middleware
 app.use(helmet());
@@ -74,6 +76,9 @@ app.use(cors({
 // Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Initialize Passport
+app.use(passport.initialize());
 
 // Request logging middleware
 app.use((req, res, next) => {

@@ -24,7 +24,7 @@ const Layout = () => {
     },
     {
       name: isAdmin ? 'All Chats' : 'My Chat',
-      path: isAdmin ? '/admin/chat' : '/customer/chat',
+      path: isAdmin ? '/admin/chat' : 'chat',
       icon: <FiMessageSquare className="w-5 h-5" />,
     },
     ...(isAdmin
@@ -103,8 +103,7 @@ const Layout = () => {
         </div>
       )}
 
-      <div className="flex">
-        {/* Sidebar (Desktop) */}
+      {/* <div className="flex">
         <div className="hidden md:block w-64 bg-white shadow-md min-h-[calc(100vh-4rem)]">
           <div className="p-4">
             <nav className="space-y-2">
@@ -122,11 +121,13 @@ const Layout = () => {
           </div>
         </div>
 
-        {/* Main Content */}
         <div className="flex-1 p-4 md:p-6">
           <Outlet />
         </div>
-      </div>
+      </div> */}
+                <div className="flex-1 p-4 md:p-6">
+          <Outlet />
+        </div>
     </div>
   );
 };
