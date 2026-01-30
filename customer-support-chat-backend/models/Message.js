@@ -54,6 +54,26 @@ const Message = sequelize.define('Message', {
     type: DataTypes.DATE,
     field: 'read_at',
     allowNull: true
+  },
+  fileKey: {
+    type: DataTypes.STRING,
+    field: 'file_key',
+    allowNull: true
+  },
+  fileName: {
+    type: DataTypes.STRING,
+    field: 'file_name',
+    allowNull: true
+  },
+  fileSize: {
+    type: DataTypes.BIGINT,
+    field: 'file_size',
+    allowNull: true
+  },
+  fileType: {
+    type: DataTypes.STRING,
+    field: 'file_type',
+    allowNull: true
   }
 }, {
   tableName: 'messages',

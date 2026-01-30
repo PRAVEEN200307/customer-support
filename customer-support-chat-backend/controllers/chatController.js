@@ -86,7 +86,11 @@ class ChatController {
     senderId,
     receiverId,
     message,
-    messageType = "text"
+    messageType = "text",
+    fileKey = null,
+    fileName = null,
+    fileSize = null,
+    fileType = null
   ) {
     try {
       const newMessage = await Message.create({
@@ -95,6 +99,10 @@ class ChatController {
         receiverId,
         message: message.trim(),
         messageType,
+        fileKey,
+        fileName,
+        fileSize,
+        fileType,
       });
 
       // Populate sender info

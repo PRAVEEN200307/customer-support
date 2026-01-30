@@ -14,30 +14,271 @@ import {
   FiTrash2,
   FiClock,
   FiUser,
-  FiAlertCircle
+  FiAlertCircle,
+  FiImage,
+  FiFile,
+  FiX,
+  FiDownload,
+  FiMessageCircle,
+  FiMinimize2,
+  FiMaximize2,
+  FiXCircle,
+  FiEye,
+  FiMaximize
 } from 'react-icons/fi';
 import { format, isToday, isYesterday } from 'date-fns';
+
+// Image Viewer Modal Component
+const ImageViewerModal = ({ imageUrl, fileName, onClose, onDownload }) => {
+  const modalRef = useRef();
+
+  // Close modal on ESC key
+  useEffect(() => {
+    const handleEscKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    document.addEventListener('keydown', handleEscKey);
+    return () => document.removeEventListener('keydown', handleEscKey);
+  }, [onClose]);
+
+  // Close modal when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (modalRef.current && !modalRef.current.contains(e.target)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+      <div 
+        ref={modalRef}
+        className="relative max-w-4xl max-h-[90vh] w-full bg-transparent rounded-lg overflow-hidden"
+      >
+        {/* Image Container */}
+        <div className="flex items-center justify-center h-full">
+          <img
+            src={imageUrl}
+            alt={fileName || 'Image preview'}
+            className="max-w-full max-h-[80vh] object-contain rounded-lg"
+          />
+        </div>
+
+        {/* Action Buttons - Top Right */}
+        <div className="absolute top-4 right-4 flex items-center space-x-2">
+          <button
+            onClick={onDownload}
+            className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-black rounded-full transition-all duration-200 hover:scale-105"
+            title="Download"
+          >
+            <FiDownload className="w-5 h-5" />
+          </button>
+          <button
+            onClick={onClose}
+            className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-black rounded-full transition-all duration-200 hover:scale-105"
+            title="Close"
+          >
+            <FiX className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Image Info - Bottom Center */}
+        {fileName && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
+            <div className="px-4 py-2 bg-black/50 backdrop-blur-sm rounded-full">
+              <p className="text-white text-sm font-medium truncate max-w-xs">
+                {fileName}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Open Full Size Button - Bottom Right */}
+        <div className="absolute bottom-4 right-4">
+          <button
+            onClick={() => window.open(imageUrl, '_blank')}
+            className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full transition-all duration-200 hover:scale-105 flex items-center space-x-2"
+            title="Open in new tab"
+          >
+            <FiMaximize className="w-5 h-5" />
+            <span className="text-sm">Open Full Size</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FileMessage = ({ msg, onImageClick }) => {
+  const [fileUrl, setFileUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const isImage = msg.fileType?.startsWith('image/') || 
+    /\.(jpg|jpeg|png|gif|webp)$/i.test(msg.fileKey || msg.fileName || '');
+
+  useEffect(() => {
+    const fetchUrl = async () => {
+      if (!msg.fileKey) return;
+      try {
+        setLoading(true);
+        const response = await chatAPI.getFileUrl(msg.fileKey);
+        if (response.data.success) {
+          setFileUrl(response.data.url);
+        } else {
+          setError(true);
+        }
+      } catch (err) {
+        console.error('Error fetching file URL:', err);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUrl();
+  }, [msg.fileKey]);
+
+  const handleDownload = () => {
+    if (!fileUrl) return;
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = msg.fileName || 'download';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImageClick = () => {
+    if (isImage && fileUrl && onImageClick) {
+      onImageClick({
+        url: fileUrl,
+        fileName: msg.fileName,
+        fileType: msg.fileType
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center space-x-2 p-3 bg-gray-100 rounded-lg animate-pulse">
+        <FiClock className="w-5 h-5 text-gray-400" />
+        <span className="text-sm text-gray-500">Loading file...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center space-x-2 p-3 bg-red-50 rounded-lg text-red-600">
+        <FiAlertCircle className="w-5 h-5" />
+        <span className="text-sm">Failed to load file</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {isImage && fileUrl ? (
+        <div className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+          {/* Image Preview */}
+          <div 
+            className="cursor-pointer hover:opacity-95 transition-opacity"
+            onClick={handleImageClick}
+          >
+            <img
+              src={fileUrl}
+              alt={msg.fileName}
+              className="max-w-full h-auto max-h-60 object-contain"
+            />
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="absolute bottom-2 right-2 flex items-center space-x-2">
+            <button
+              onClick={handleImageClick}
+              className="p-2 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+              title="View full image"
+            >
+              <FiEye className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="p-2 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+              title="Download"
+            >
+              <FiDownload className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center space-x-3 p-3 bg-white/50 rounded-lg border border-gray-200/50">
+          <div className="p-2 bg-blue-100 rounded-lg">
+            {isImage ? (
+              <FiImage className="w-6 h-6 text-blue-600" />
+            ) : (
+              <FiFile className="w-6 h-6 text-blue-600" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {msg.fileName}
+            </p>
+            <p className="text-xs text-gray-500">
+              {msg.fileSize ? `${(msg.fileSize / 1024).toFixed(1)} KB` : 'File'}
+            </p>
+          </div>
+          <button
+            onClick={handleDownload}
+            className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+            title="Download"
+          >
+            <FiDownload className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+      {msg.message && msg.message !== `File: ${msg.fileName}` && (
+        <p className="text-sm text-gray-800 whitespace-pre-wrap px-1">
+          {msg.message}
+        </p>
+      )}
+    </div>
+  );
+};
 
 const CustomerChat = () => {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [typing, setTyping] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [selectedImage, setSelectedImage] = useState(null);
+  
+  const fileInputRef = useRef(null);
   const { socket } = useSocket();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
-  // Fetch or create customer's room (only once)
+  // Fetch or create customer's room
   const { data: roomData, isLoading: roomLoading } = useQuery({
     queryKey: ['my-room'],
     queryFn: () => chatAPI.getMyRoom(),
-    staleTime: 30000, // Cache for 30 seconds
+    staleTime: 30000,
   });
 
   const roomId = roomData?.data?.room?.id;
 
-  // Fetch initial chat history (only once when room is loaded)
+  // Fetch initial chat history
   const fetchInitialHistory = useCallback(async () => {
     if (!roomId) return [];
     try {
@@ -58,11 +299,10 @@ const CustomerChat = () => {
     }
   }, [roomId, fetchInitialHistory, messages.length]);
 
-  // Join socket room when room is available
+  // Join socket room
   useEffect(() => {
     if (socket && roomId) {
       socket.emit('join_room', roomId);
-      console.log('Customer joined room:', roomId);
     }
   }, [socket, roomId]);
 
@@ -70,25 +310,17 @@ const CustomerChat = () => {
   useEffect(() => {
     if (!socket || !roomId) return;
 
-    // Handle incoming messages
     const handleReceiveMessage = (data) => {
-      console.log('Customer received message:', data);
-      
       if (data.roomId !== roomId) return;
 
-      // Ensure message has timestamp
       const messageWithTimestamp = {
         ...data,
         createdAt: data.createdAt || data.created_at || new Date().toISOString()
       };
 
       setMessages(prev => {
-        // Check if message already exists
-        if (prev.some(msg => msg.id === data.id)) {
-          return prev;
-        }
+        if (prev.some(msg => msg.id === data.id)) return prev;
 
-        // For our own messages, check if there's an optimistic version
         const isOurOwnMessage = data.senderId === user?.id;
         if (isOurOwnMessage) {
           const optimisticIndex = prev.findIndex(
@@ -98,8 +330,6 @@ const CustomerChat = () => {
           if (optimisticIndex !== -1) {
             const newMessages = [...prev];
             newMessages[optimisticIndex] = messageWithTimestamp;
-            
-            // Sort by timestamp
             newMessages.sort((a, b) => 
               new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
             );
@@ -108,8 +338,6 @@ const CustomerChat = () => {
         }
 
         const newMessages = [...prev, messageWithTimestamp];
-        
-        // Sort by timestamp
         newMessages.sort((a, b) => 
           new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
         );
@@ -117,42 +345,19 @@ const CustomerChat = () => {
         return newMessages;
       });
 
-      // Show notification for messages from admin
+      // Increase unread count if chat is closed or minimized
       if (data.senderId !== user?.id) {
-        toast.custom((t) => (
-          <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} 
-            max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5`}>
-            <div className="flex-1 w-0 p-4">
-              <div className="flex items-start">
-                <div className="flex-shrink-0 pt-0.5">
-                  <FiMessageSquare className="h-6 w-6 text-blue-600" />
-                </div>
-                <div className="ml-3 flex-1">
-                  <p className="text-sm font-medium text-gray-900">
-                    New message from Support
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500 truncate">
-                    {data.message.length > 50 
-                      ? `${data.message.substring(0, 50)}...` 
-                      : data.message}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        ));
+        if (!isChatOpen || isMinimized) {
+          setUnreadCount(prev => prev + 1);
+        }
       }
     };
 
-    // Handle typing indicator from admin
     const handleUserTyping = (data) => {
       if (data.roomId === roomId && data.userId !== user?.id) {
         setTyping(data.isTyping);
         
-        // Clear typing indicator after 2 seconds
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-        }
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         
         if (data.isTyping) {
           typingTimeoutRef.current = setTimeout(() => {
@@ -162,7 +367,6 @@ const CustomerChat = () => {
       }
     };
 
-    // Handle message read confirmation
     const handleMessageRead = (data) => {
       if (data.roomId === roomId) {
         setMessages(prev => 
@@ -175,102 +379,163 @@ const CustomerChat = () => {
       }
     };
 
-    // Handle admin online status
-    const handleAdminOnline = (data) => {
-      if (data.isOnline) {
-        toast.success('Support team is now online');
-      } else {
-        toast.info('Support team is offline');
-      }
-    };
-
-    // Attach event listeners
     socket.on('receive_message', handleReceiveMessage);
     socket.on('user_typing', handleUserTyping);
     socket.on('message_read', handleMessageRead);
-    socket.on('admin_online', handleAdminOnline);
 
     return () => {
       socket.off('receive_message', handleReceiveMessage);
       socket.off('user_typing', handleUserTyping);
       socket.off('message_read', handleMessageRead);
-      socket.off('admin_online', handleAdminOnline);
       
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
     };
-  }, [socket, roomId, user?.id]);
+  }, [socket, roomId, user?.id, isChatOpen, isMinimized]);
 
-  // Handle typing indicator for customer
-  useEffect(() => {
-    if (socket && roomId && message.trim()) {
-      socket.emit('typing', {
-        roomId,
-        isTyping: true
-      });
+  // Handle image click in FileMessage component
+  const handleImageClick = (imageData) => {
+    setSelectedImage(imageData);
+  };
 
-      // Clear typing after 1 second of inactivity
-      const timeout = setTimeout(() => {
-        socket.emit('typing', {
-          roomId,
-          isTyping: false
-        });
-      }, 1000);
+  // Close image viewer
+  const handleCloseImageViewer = () => {
+    setSelectedImage(null);
+  };
 
-      return () => clearTimeout(timeout);
-    }
-  }, [message, socket, roomId]);
+  // Download image from viewer
+  const handleDownloadImage = () => {
+    if (!selectedImage?.url) return;
+    const link = document.createElement('a');
+    link.href = selectedImage.url;
+    link.download = selectedImage.fileName || 'image';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  // Mark unread messages as read when they appear
-  useEffect(() => {
-    if (socket && roomId && messages.length > 0) {
-      const unreadMessages = messages.filter(
-        msg => !msg.isRead && msg.senderId !== user?.id
-      );
+  // Handle file selection
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-      if (unreadMessages.length > 0) {
-        const messageIds = unreadMessages.map(msg => msg.id);
-
-        // Update local state immediately
-        setMessages(prev => 
-          prev.map(msg => 
-            messageIds.includes(msg.id) 
-              ? { ...msg, isRead: true }
-              : msg
-          )
-        );
-
-        // Send to server
-        socket.emit('mark_as_read', {
-          messageIds,
-          roomId
-        });
-      }
-    }
-  }, [messages.length, socket, roomId, user?.id]);
-
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Send message with optimistic update
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-
-    if (!socket || !roomId || !message.trim()) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be less than 10MB');
       return;
     }
+
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    if (!validTypes.includes(file.type)) {
+      toast.error('Please select a valid file type (image, PDF, Word, or text)');
+      return;
+    }
+
+    setSelectedFile(file);
+    
+    if (file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    } else {
+      setPreviewUrl('');
+    }
+    
+    e.target.value = '';
+  };
+
+  // Upload and send file
+  const uploadAndSendFile = async (file) => {
+    try {
+      setUploading(true);
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await chatAPI.uploadFile(formData);
+      const uploadResult = response.data;
+      
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.message || 'Upload failed');
+      }
+      
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const optimisticMessage = {
+        id: tempId,
+        roomId,
+        senderId: user?.id,
+        senderEmail: user?.email,
+        receiverId: null,
+        message: `File: ${file.name}`,
+        messageType: 'file',
+        fileKey: uploadResult.fileKey,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        isOptimistic: true
+      };
+
+      setMessages(prev => {
+        const newMessages = [...prev, optimisticMessage];
+        newMessages.sort((a, b) => 
+          new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+        );
+        return newMessages;
+      });
+
+      socket.emit('send_message', {
+        roomId,
+        message: `File: ${file.name}`,
+        messageType: 'file',
+        fileKey: uploadResult.fileKey,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        receiverId: null,
+      }, (ack) => {
+        if (!ack?.success) {
+          setMessages(prev => 
+            prev.filter(msg => msg.id !== tempId)
+          );
+          toast.error(ack?.error || 'Failed to send file');
+        }
+      });
+
+      setSelectedFile(null);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl('');
+      }
+      
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast.error(error.message || 'Failed to upload file');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Send message
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+
+    if (!socket || !roomId) return;
+
+    if (selectedFile) {
+      await uploadAndSendFile(selectedFile);
+      return;
+    }
+
+    if (!message.trim()) return;
 
     const messageData = {
       roomId,
       message: message.trim(),
       messageType: 'text',
-      receiverId: null, // Let server handle admin assignment
+      receiverId: null,
     };
 
-    // Generate optimistic message
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const optimisticMessage = {
       id: tempId,
@@ -285,7 +550,6 @@ const CustomerChat = () => {
       isOptimistic: true
     };
 
-    // Add optimistic message to UI immediately
     setMessages(prev => {
       const newMessages = [...prev, optimisticMessage];
       newMessages.sort((a, b) => 
@@ -294,12 +558,8 @@ const CustomerChat = () => {
       return newMessages;
     });
 
-    // Send via socket
     socket.emit('send_message', messageData, (ack) => {
-      if (ack?.success) {
-        console.log('Message sent successfully');
-      } else {
-        // Remove optimistic message on error
+      if (!ack?.success) {
         setMessages(prev => 
           prev.filter(msg => msg.id !== tempId)
         );
@@ -310,25 +570,36 @@ const CustomerChat = () => {
     setMessage('');
   };
 
-  // Clear chat history
-  const handleClearChat = async () => {
-    if (window.confirm('Are you sure you want to clear chat history?')) {
-      try {
-        await chatAPI.clearChatHistory(roomId);
-        setMessages([]);
-        toast.success('Chat history cleared');
-      } catch (error) {
-        toast.error('Failed to clear chat history');
-      }
+  // Toggle chat window
+  const toggleChat = () => {
+    setIsChatOpen(!isChatOpen);
+    setIsMinimized(false);
+    if (!isChatOpen) {
+      setUnreadCount(0);
     }
   };
 
-  // Filter out duplicate optimistic messages
+  // Minimize chat window
+  const minimizeChat = () => {
+    setIsMinimized(true);
+  };
+
+  // Maximize chat window
+  const maximizeChat = () => {
+    setIsMinimized(false);
+  };
+
+  // Close chat window
+  const closeChat = () => {
+    setIsChatOpen(false);
+    setIsMinimized(false);
+  };
+
+  // Get display messages
   const getDisplayMessages = () => {
     return messages.filter((msg, index, array) => {
       if (!msg.isOptimistic) return true;
       
-      // Check if there's a real message with same content
       const hasRealDuplicate = array.some(otherMsg => 
         !otherMsg.isOptimistic && 
         otherMsg.message === msg.message && 
@@ -372,6 +643,19 @@ const CustomerChat = () => {
 
   const messageGroups = groupMessagesByDate(displayMessages);
 
+  // Render message content
+  const renderMessageContent = (msg) => {
+    if (msg.messageType === 'file') {
+      return <FileMessage msg={msg} onImageClick={handleImageClick} />;
+    }
+
+    return (
+      <div className="text-sm whitespace-pre-wrap break-words">
+        {msg.message}
+      </div>
+    );
+  };
+
   if (roomLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -382,205 +666,227 @@ const CustomerChat = () => {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)] bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-      {/* Chat Header */}
-      <div className="border-b border-gray-200 p-4 bg-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center">
-              <FiUser className="text-white w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">Support Chat</h3>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-500 flex items-center">
-                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                  Support team online
-                </span>
-                {typing && (
-                  <span className="text-xs text-blue-600 font-medium animate-pulse">
-                    typing...
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={handleClearChat}
-            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-            title="Clear Chat History"
-          >
-            <FiTrash2 className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
+    <>
+      {/* Image Viewer Modal */}
+      {selectedImage && (
+        <ImageViewerModal
+          imageUrl={selectedImage.url}
+          fileName={selectedImage.fileName}
+          onClose={handleCloseImageViewer}
+          onDownload={handleDownloadImage}
+        />
+      )}
 
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-        {displayMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mb-6 shadow-lg">
-              <FiMessageSquare className="w-12 h-12 text-blue-600" />
-            </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-3">Welcome to Support</h3>
-            <p className="text-gray-600 text-center max-w-md mb-8">
-              How can we help you today? Send a message to start a conversation with our support team.
-            </p>
-            <div className="flex items-center space-x-6 text-sm text-gray-500">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                <span>Support team is online</span>
+      {/* Floating Contact Button */}
+      <button
+        onClick={toggleChat}
+        className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl hover:bg-blue-700 transition-all duration-300 hover:scale-110 flex items-center justify-center"
+      >
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+        <FiMessageCircle className="w-7 h-7" />
+      </button>
+
+      {/* Chat Window */}
+      {isChatOpen && (
+        <div className={`fixed bottom-24 right-6 z-40 ${isMinimized ? 'w-72' : 'w-80 sm:w-96'} transition-all duration-300`}>
+          {/* Chat Header */}
+          <div className="bg-blue-600 text-white rounded-t-xl p-3 flex items-center justify-between shadow-lg">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <FiUser className="w-5 h-5" />
               </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                <span>Messages are real-time</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {Object.entries(messageGroups).map(([date, dateMessages]) => (
-              <div key={date}>
-                <div className="sticky top-0 z-10 flex justify-center mb-4">
-                  <div className="bg-blue-100 text-blue-800 text-xs font-medium px-4 py-2 rounded-full shadow-sm">
-                    {date}
-                  </div>
+              <div>
+                <h3 className="font-semibold text-sm">Support Chat</h3>
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span className="text-xs opacity-90">Online</span>
+                  {typing && (
+                    <span className="text-xs animate-pulse ml-2">typing...</span>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  {dateMessages.map((msg) => {
-                    const isSender = msg.senderId === user?.id;
-                    const isRead = msg.isRead;
-                    const isOptimistic = msg.isOptimistic;
-                    const timestamp = msg.createdAt ? new Date(msg.createdAt) : null;
+              </div>
+            </div>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={isMinimized ? maximizeChat : minimizeChat}
+                className="p-1 hover:bg-white/20 rounded transition-colors"
+                title={isMinimized ? 'Maximize' : 'Minimize'}
+              >
+                {isMinimized ? (
+                  <FiMaximize2 className="w-4 h-4" />
+                ) : (
+                  <FiMinimize2 className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={closeChat}
+                className="p-1 hover:bg-white/20 rounded transition-colors"
+                title="Close"
+              >
+                <FiXCircle className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`flex ${isSender ? 'justify-end' : 'justify-start'} mb-2 px-4`}
-                      >
-                        {/* WhatsApp-style message bubble */}
+          {/* Chat Body - Only show when not minimized */}
+          {!isMinimized && (
+            <>
+              {/* Chat Messages */}
+              <div className="bg-white h-80 overflow-y-auto p-3 border-l border-r border-gray-200">
+                {displayMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-500 p-4 text-center">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+                      <FiMessageSquare className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <h4 className="font-medium text-gray-800 mb-1">Start a conversation</h4>
+                    <p className="text-xs text-gray-600">
+                      Send a message to get help from our support team
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {displayMessages.slice(-20).map((msg) => {
+                      const isSender = msg.senderId === user?.id;
+                      const isOptimistic = msg.isOptimistic;
+                      const timestamp = msg.createdAt ? new Date(msg.createdAt) : null;
+
+                      return (
                         <div
-                          className={`relative max-w-[65%] rounded-2xl px-3 py-2 ${
-                            isSender
-                              ? isOptimistic
-                                ? "bg-[#D9FDD3] opacity-70 rounded-tr-sm"
-                                : "bg-[#DCF8C6] rounded-tr-sm"
-                              : "bg-white rounded-tl-sm border border-gray-200"
-                          } shadow-sm`}
+                          key={msg.id}
+                          className={`flex ${isSender ? 'justify-end' : 'justify-start'}`}
                         >
-                          {/* Message content */}
-                          <div className="text-sm whitespace-pre-wrap break-words pb-1">
-                            {msg.message}
-                          </div>
-
-                          {/* Timestamp and status row */}
                           <div
-                            className={`flex items-center justify-end mt-1 space-x-1 ${
-                              isSender ? "" : "justify-end"
+                            className={`max-w-[85%] rounded-lg px-3 py-2 ${
+                              isSender
+                                ? isOptimistic
+                                  ? "bg-blue-100 opacity-70"
+                                  : "bg-blue-500 text-white"
+                                : "bg-gray-100"
                             }`}
                           >
-                            {/* Time */}
-                            {timestamp && (
-                              <span className="text-xs text-gray-500">
-                                {format(timestamp, "HH:mm")}
-                              </span>
+                            {msg.messageType === 'file' ? (
+                              <FileMessage msg={msg} onImageClick={handleImageClick} />
+                            ) : (
+                              <div className="text-sm whitespace-pre-wrap break-words">
+                                {msg.message}
+                              </div>
                             )}
-
-                            {/* Status icons for sender */}
-                            {isSender && (
-                              <div className="flex items-center">
-                                {isOptimistic ? (
-                                  <div className="flex items-center space-x-1 ml-1">
-                                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                                    <span className="text-xs text-gray-400 italic">
-                                      Sending
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    {/* Single check for sent, double check for delivered, blue double check for read */}
-                                    {isRead ? (
-                                      <FiCheckCircle className="w-3.5 h-3.5 text-blue-500 ml-1" />
-                                    ) : (
-                                      <div className="relative w-3.5 h-3.5 ml-1">
-                                        <FiCheck className="w-3.5 h-3.5 text-gray-500 absolute top-0 left-0" />
-                                        <FiCheck className="w-3.5 h-3.5 text-gray-500 absolute top-0 left-1" />
-                                      </div>
-                                    )}
-                                  </>
-                                )}
+                            {timestamp && (
+                              <div className="text-xs mt-1 opacity-70">
+                                {format(timestamp, 'HH:mm')}
                               </div>
                             )}
                           </div>
-
-                          {/* WhatsApp-style bubble tail */}
-                          {isSender ? (
-                            <div className="absolute -right-2 top-0 w-2 h-4 overflow-hidden">
-                              <div className="w-4 h-4 bg-[#DCF8C6] transform rotate-45 origin-bottom-left"></div>
-                            </div>
-                          ) : (
-                            <div className="absolute -left-2 top-0 w-2 h-4 overflow-hidden">
-                              <div className="w-4 h-4 bg-white transform rotate-45 origin-bottom-right border-l border-b border-gray-200"></div>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
 
-      {/* Message Input */}
-      <div className="border-t border-gray-200 bg-white p-4">
-        <form onSubmit={handleSendMessage} className="flex items-center space-x-3">
-          <div className="flex-1">
-            <div className="relative">
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type your message..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (message.trim()) {
-                      handleSendMessage(e);
-                    }
-                  }
-                }}
-              />
-              <div className="absolute right-3 top-3 flex items-center space-x-2">
-                <button
-                  type="button"
-                  className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
-                >
-                  <FiSmile className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
-                >
-                  <FiPaperclip className="w-5 h-5" />
-                </button>
+              {/* File preview (if any) */}
+              {selectedFile && (
+                <div className="bg-blue-50 p-2 border-l border-r border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      {previewUrl ? (
+                        <div className="w-8 h-8 rounded overflow-hidden cursor-pointer" onClick={() => setSelectedImage({ url: previewUrl, fileName: selectedFile.name })}>
+                          <img 
+                            src={previewUrl} 
+                            alt="Preview" 
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                          <FiFile className="w-4 h-4 text-blue-600" />
+                        </div>
+                      )}
+                      <div className="truncate max-w-[180px]">
+                        <p className="text-xs font-medium text-gray-800 truncate">
+                          {selectedFile.name}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedFile(null);
+                        if (previewUrl) {
+                          URL.revokeObjectURL(previewUrl);
+                          setPreviewUrl('');
+                        }
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-500"
+                    >
+                      <FiX className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Message Input */}
+              <div className="bg-white border border-gray-200 rounded-b-xl p-3 shadow-lg">
+                <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            if (message.trim() || selectedFile) {
+                              handleSendMessage(e);
+                            }
+                          }
+                        }}
+                        disabled={uploading}
+                      />
+                      <div className="absolute right-2 top-2 flex items-center space-x-1">
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileSelect}
+                          className="hidden"
+                          accept="image/*,.pdf,.doc,.docx,.txt"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-1 text-gray-400 hover:text-blue-600"
+                          disabled={uploading}
+                        >
+                          <FiPaperclip className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={(!message.trim() && !selectedFile) || uploading}
+                    className="bg-blue-600 text-white p-2.5 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                  >
+                    {uploading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    ) : (
+                      <FiSend className="w-4 h-4" />
+                    )}
+                  </button>
+                </form>
               </div>
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={!message.trim()}
-            className="bg-blue-600 text-white p-3.5 rounded-full hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-lg"
-          >
-            <FiSend className="w-5 h-5" />
-          </button>
-        </form>
-      </div>
-    </div>
+            </>
+          )}
+        </div>
+      )}
+    </>
   );
 };
 

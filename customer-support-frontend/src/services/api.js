@@ -2,7 +2,7 @@
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -71,6 +71,10 @@ export const chatAPI = {
   getUnreadCount: () => api.get('/chat/unread-count'),
   getAdminRooms: () => api.get('/chat/admin/rooms'),
   closeAdminRoom: (roomId) => api.delete(`/chat/admin/close/${roomId}`),
+  uploadFile: (formData) => api.post('/chat/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getFileUrl: (key) => api.get(`/chat/file-url?key=${encodeURIComponent(key)}`),
 };
 
 export const authAPI = {

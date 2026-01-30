@@ -11,8 +11,9 @@ class SocketService {
     if (this.socket?.connected) return;
 
     const token = localStorage.getItem('accessToken');
+    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
     
-    this.socket = io('http://localhost:3000', {
+    this.socket = io(SOCKET_URL, {
       auth: { token },
       transports: ['websocket', 'polling'],
     });

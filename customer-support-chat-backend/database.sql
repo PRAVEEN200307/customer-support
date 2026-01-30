@@ -102,6 +102,10 @@ CREATE TABLE messages (
     receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     message TEXT NOT NULL,
     message_type VARCHAR(20) DEFAULT 'text', -- 'text', 'image', 'file'
+    file_key TEXT,
+    file_name TEXT,
+    file_size BIGINT,
+    file_type TEXT,
     is_read BOOLEAN DEFAULT FALSE,
     read_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

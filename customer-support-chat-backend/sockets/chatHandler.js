@@ -76,6 +76,10 @@ class ChatHandler {
           receiverId: msg.receiverId,
           message: msg.message,
           messageType: msg.messageType,
+          fileKey: msg.fileKey,
+          fileName: msg.fileName,
+          fileSize: msg.fileSize,
+          fileType: msg.fileType,
           isRead: msg.isRead,
           createdAt: msg.createdAt,
         })),
@@ -127,7 +131,15 @@ class ChatHandler {
 
   async handleSendMessage(socket, userId, isAdmin, data) {
     try {
-      const { receiverId, message, messageType = "text" } = data;
+      const { 
+        receiverId, 
+        message, 
+        messageType = "text",
+        fileKey = null,
+        fileName = null,
+        fileSize = null,
+        fileType = null
+      } = data;
 
       let roomId = socket.roomId;
 
@@ -189,7 +201,11 @@ class ChatHandler {
         userId,
         finalReceiverId,
         message,
-        messageType
+        messageType,
+        fileKey,
+        fileName,
+        fileSize,
+        fileType
       );
 
       // Prepare message data
@@ -201,6 +217,10 @@ class ChatHandler {
         receiverId: finalReceiverId,
         message: savedMessage.message,
         messageType: savedMessage.messageType,
+        fileKey: savedMessage.fileKey,
+        fileName: savedMessage.fileName,
+        fileSize: savedMessage.fileSize,
+        fileType: savedMessage.fileType,
         isRead: false,
         createdAt: savedMessage.createdAt,
         created_at: savedMessage.createdAt, // Add this for compatibility
