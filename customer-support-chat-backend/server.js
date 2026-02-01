@@ -156,5 +156,6 @@ const shutdown = () => {
   });
 };
 
+// Register shutdown handlers
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
