@@ -6,12 +6,15 @@ require('dotenv').config();
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
+  database: process.env.DB_NAME,       // Your app database, not 'postgres'
+  user: process.env.DB_USER,           // Your app user, not 'postgres'
   password: process.env.DB_PASSWORD,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000,
+  ssl: {
+    rejectUnauthorized: false          // required for local dev
+  }
 });
 
 // Sequelize instance
@@ -32,6 +35,12 @@ const sequelize = new Sequelize(
     define: {
       timestamps: true,
       underscored: true
+    },
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false      // allows connection from localhost
+      }
     }
   }
 );
