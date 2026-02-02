@@ -151,7 +151,7 @@ const Login = () => {
           <div className="mt-8 pt-6 border-t border-gray-200">
             <div className="text-center">
               <p className="text-sm text-gray-500">
-                {/* Demo Accounts :  */}
+                Demo Accounts : 
               </p>
               <div className="mt-2 space-y-1 text-sm">
                 <p className="text-gray-600">
