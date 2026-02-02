@@ -16,19 +16,21 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd ~/customer-support
-            git pull origin main
+            cd ~/customer-support || exit
+
+            # This fixes the "Aborting" error you sent
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
 
             # --- BACKEND ---
             cd customer-support-chat-backend
             npm install
-            pm2 restart chat-backend || pm2 start index.js --name "chat-backend"
+            pm2 restart chat-backend --update-env || pm2 start index.js --name "chat-backend"
 
-            # --- FRONTEND (VITE) ---
+            # --- FRONTEND ---
             cd ../customer-support-frontend
             npm install
-            npm run build  # This creates the 'dist' folder
-            
-            # Serve the 'dist' folder using PM2 and 'serve' package
-            # If 'serve' isn't installed, it will install it
+            rm -rf dist
+            npm run build
             pm2 restart vite-frontend || pm2 serve dist 5173 --name "vite-frontend" --spa
