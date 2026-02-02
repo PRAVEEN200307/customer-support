@@ -202,7 +202,8 @@ class AuthController {
             id: user.id,
             email: user.email,
             isVerified: user.is_verified,
-            lastLogin: user.last_login
+            lastLogin: user.last_login,
+            userType: user.user_type
           }
         }
       });
