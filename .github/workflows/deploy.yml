@@ -1,0 +1,34 @@
+name: Deploy Fullstack App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/customer-support
+            git pull origin main
+
+            # --- BACKEND ---
+            cd customer-support-chat-backend
+            npm install
+            pm2 restart chat-backend || pm2 start index.js --name "chat-backend"
+
+            # --- FRONTEND (VITE) ---
+            cd ../customer-support-frontend
+            npm install
+            npm run build  # This creates the 'dist' folder
+            
+            # Serve the 'dist' folder using PM2 and 'serve' package
+            # If 'serve' isn't installed, it will install it
+            pm2 restart vite-frontend || pm2 serve dist 5173 --name "vite-frontend" --spa
