@@ -155,10 +155,10 @@ const Login = () => {
               </p>
               <div className="mt-2 space-y-1 text-sm">
                 <p className="text-gray-600">
-                  <span className="font-medium">Customer:</span> customer@example.com / Password123!
+                  <span className="font-medium">Customer:</span> crouselearn@gmail.com / Password@123
                 </p>
                 <p className="text-gray-600">
-                  <span className="font-medium">Admin:</span> admin@example.com / Admin123!
+                  <span className="font-medium">Admin:</span> praveenkumarweboin@gmail.com / Password@123
                 </p>
               </div>
             </div>
