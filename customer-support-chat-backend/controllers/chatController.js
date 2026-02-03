@@ -223,18 +223,25 @@ class ChatController {
 
   // Admin: Close and delete chat room and all associated messages
   static async adminCloseChat(roomId) {
+    const { sequelize } = require("../config/database");
+    const transaction = await sequelize.transaction();
     try {
-      const room = await ChatRoom.findByPk(roomId);
+      const room = await ChatRoom.findByPk(roomId, { transaction });
       if (!room) {
         throw new Error("Chat room not found");
       }
 
-      // Delete the room. Due to ON DELETE CASCADE in DB, 
-      // messages and deleted_chats will be deleted automatically.
-      await room.destroy();
+      // Explicitly delete associated data to avoid foreign key constraints
+      await Message.destroy({ where: { roomId }, transaction });
+      await DeletedChat.destroy({ where: { roomId }, transaction });
 
+      // Delete the room
+      await room.destroy({ transaction });
+
+      await transaction.commit();
       return true;
     } catch (error) {
+      await transaction.rollback();
       console.error("Error closing chat room:", error);
       throw error;
     }
